@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site-to-Site Distance Calculator</title>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- React 18 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel Standalone -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- PapaParse (CSV) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- SheetJS (XLSX) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        :root {
+            --bg: #FFFFFF;
+            --text: #1a1a1a;
+            --border: #E5E5E5;
+            --accent: #10b981;
+            --sidebar-width: 420px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            font-size: 13px;
+        }
+
+        h2 {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            color: #666;
+        }
+
+        .layout {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 2000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .main-content {
+            position: absolute;
+            left: var(--sidebar-width);
+            right: 0;
+            top: 0;
+            bottom: 0;
+            background: #FAFAFA;
+            display: flex;
+            flex-direction: column;
+            transition: left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            left: 0;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .panel {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dropzone {
+            border: 1px dashed var(--border);
+            border-radius: 4px;
+            padding: 32px 16px;
+            text-align: center;
+            cursor: pointer;
+            background: #FAFAFA;
+            transition: background 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .dropzone:hover,
+        .dropzone.dragging {
+            background: #f0f0f0;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 13px;
+            background: #fff;
+            color: var(--text);
+            appearance: none;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: #0e0e0e;
+        }
+
+        .btn {
+            background: #000;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: inherit;
+            width: 100%;
+            transition: background 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: #333;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-outline:hover:not(:disabled) {
+            background: #f5f5f5;
+        }
+
+        .main-header {
+            height: 48px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 24px;
+            flex-shrink: 0;
+            z-index: 1000;
+        }
+
+        .toggle-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            color: var(--text);
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .toggle-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .tabs {
+            display: flex;
+            height: 100%;
+            gap: 24px;
+        }
+
+        .tabs button {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 2px solid transparent;
+            height: 100%;
+            font-weight: 500;
+            font-family: inherit;
+        }
+
+        .tabs button:hover {
+            color: var(--text);
+        }
+
+        .tabs button.active {
+            color: var(--text);
+            border-bottom-color: var(--text);
+            font-weight: 600;
+        }
+
+        .tab-content {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Map styling */
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        .leaflet-container {
+            background: #f5f5f5;
+            font-family: inherit;
+        }
+
+        .tab-text-desktop {
+            display: inline;
+        }
+
+        .tab-text {
+            display: none;
+        }
+
+        @media (max-width: 1024px) {
+            .tab-text-desktop {
+                display: none;
+            }
+
+            .tab-text {
+                display: inline;
+            }
+        }
+
+        /* Thin Scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #dcdcdc;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c0c0c0;
+        }
+
+        /* Table */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            background: var(--bg);
+            padding: 0;
+            margin: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th,
+        td {
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 1;
+            font-weight: 600;
+            color: #666;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        th::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: 1px;
+            background: var(--border);
+        }
+
+        tr {
+            transition: background 0.1s;
+        }
+
+        tr:hover {
+            background: #f9f9f9;
+            cursor: pointer;
+        }
+
+        tr.selected {
+            background: #f0fdf4;
+        }
+
+        /* Permanent Tooltip */
+        .minimal-tooltip {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            color: var(--text);
+            text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 0px 2px 4px rgba(255, 255, 255, 0.8);
+            padding: 0;
+        }
+
+        .minimal-tooltip::before {
+            display: none;
+        }
+
+        /* Textarea */
+        textarea {
+            width: 100%;
+            height: 100%;
+            border: none;
+            resize: none;
+            padding: 24px;
+            outline: none;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* Google Earth-style Layer Switcher */
+        .layer-switcher {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 1000;
+        }
+
+        .layer-switcher-collapsed {
+            width: 56px;
+            height: 56px;
+            border-radius: 8px;
+            background: #fff;
+            border: 2px solid rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .layer-switcher-collapsed:hover {
+            border-color: rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .layer-switcher-collapsed img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .layer-switcher-expanded {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            padding: 8px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            width: auto;
+            animation: layerFadeIn 0.15s ease;
+        }
+
+        @keyframes layerFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .layer-tile {
+            width: 72px;
+            cursor: pointer;
+            text-align: center;
+            border-radius: 6px;
+            padding: 4px;
+            transition: background 0.15s;
+        }
+
+        .layer-tile:hover {
+            background: #f0f0f0;
+        }
+
+        .layer-tile.active {
+            background: #e0f2fe;
+        }
+
+        .layer-tile-img {
+            width: 64px;
+            height: 64px;
+            border-radius: 4px;
+            border: 2px solid transparent;
+            overflow: hidden;
+            margin: 0 auto;
+            transition: border-color 0.15s;
+        }
+
+        .layer-tile.active .layer-tile-img {
+            border-color: #0e0e0e;
+        }
+
+        .layer-tile-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .layer-tile-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: #555;
+            margin-top: 4px;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .layer-tile.active .layer-tile-label {
+            color: #0e0e0e;
+        }
+
+        .portfolio-link {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #666;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .portfolio-link:hover {
+            color: var(--text);
+            background: #f5f5f5;
+            border-color: var(--border);
+        }
+
+        .portfolio-link svg {
+            color: #000;
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            :root {
+                --sidebar-width: 100%;
+            }
+
+            .sidebar {
+                width: 100%;
+                z-index: 3000;
+            }
+
+            .main-content {
+                left: 0 !important;
+            }
+
+            .sidebar-header,
+            .panel {
+                padding: 16px;
+            }
+
+            .main-header {
+                padding: 0 8px;
+                gap: 8px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .main-header::-webkit-scrollbar {
+                display: none;
+                /* Hide scrollbar for cleaner mobile look */
+            }
+
+            .tabs {
+                gap: 8px;
+                flex-shrink: 0;
+            }
+
+            .tabs button {
+                padding: 0 8px;
+                white-space: nowrap;
+                font-size: 11px;
+            }
+
+            .layer-switcher {
+                top: 60px;
+                right: 12px;
+            }
+
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            th,
+            td {
+                padding: 8px 12px;
+                font-size: 11px;
+            }
+
+            .main-header {
+                flex-wrap: nowrap;
+                justify-content: flex-start;
+                padding-right: 8px;
+            }
+
+            .portfolio-link {
+                padding: 4px 8px;
+                font-size: 10px;
+                white-space: nowrap;
+            }
+
+            .sidebar-close-btn {
+                display: flex !important;
+            }
+        }
+
+        .sidebar-close-btn {
+            display: none;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 4px;
+            color: var(--text);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar-close-btn:hover {
+            background: #f0f0f0;
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Color Picker Fixes */
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 50%;
+        }
+
+        /* Icon Picker Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 480px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 12px;
+            padding: 4px;
+        }
+
+        .icon-item {
+            aspect-ratio: 1;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f8fafc;
+        }
+
+        .icon-item:hover {
+            border-color: var(--accent);
+            background: #f0fdf4;
+            transform: translateY(-2px);
+        }
+
+        .icon-item.active {
+            border-color: var(--accent);
+            background: #f0fdf4;
+            box-shadow: 0 0 0 2px #dcfce7;
+        }
+
+        .icon-preview-hero {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 16px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .preview-box {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+        }
+
+        .masked-icon {
+            width: 32px;
+            height: 32px;
+            mask-size: contain;
+            mask-repeat: no-repeat;
+            mask-position: center;
+            -webkit-mask-size: contain;
+            -webkit-mask-repeat: no-repeat;
+            -webkit-mask-position: center;
+        }
+
+        .icon-design-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+            background: #fafafa;
+        }
+
+        .icon-design-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .small-preview {
+            width: 32px;
+            height: 32px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        /* Mode Selector */
+        .mode-selector {
+            display: flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+
+        .mode-option {
+            flex: 1;
+            padding: 8px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            color: #64748b;
+        }
+
+        .mode-option:hover {
+            color: var(--text);
+        }
+
+        .mode-option.active {
+            background: #fff;
+            color: var(--text);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // --- Custom SVG Icons to avoid Lucide React DOM replacement issues while matching spec ---
+        const Icons = {
+            Map: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>,
+            Table: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>,
+            Code: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>,
+            Upload: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>,
+            Export: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>,
+            Menu: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>,
+            FileJson: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M10 13a2 2 0 0 0-2 2v.01"></path><path d="M10 18a2 2 0 0 1-2-2v-.01"></path><path d="M14 13a2 2 0 0 1 2 2v.01"></path><path d="M14 18a2 2 0 0 0 2-2v-.01"></path></svg>,
+            FileSheet: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h8"></path><path d="M8 17h8"></path><path d="M14 9H8"></path></svg>,
+            Earth: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>,
+            Target: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>,
+            X: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+            Book: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>,
+            Gear: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>,
+        };
+
+        // --- Utils ---
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371; // km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        const MAP_STYLES = {
+            light: { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attr: '&copy; OpenStreetMap &copy; CARTO' },
+            osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; OpenStreetMap contributors' },
+            satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: 'Tiles &copy; Esri' },
+            dtm: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}', attr: 'Tiles &copy; Esri' }
+        };
+
+        const GE_ICONS = {
+            "Shapes & Markers": [
+                "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png",
+                "http://maps.google.com/mapfiles/kml/shapes/placemark_square.png",
+                "http://maps.google.com/mapfiles/kml/shapes/placemark_diamond.png",
+                "http://maps.google.com/mapfiles/kml/shapes/target.png",
+                "http://maps.google.com/mapfiles/kml/paddle/wht-blank.png",
+                "http://maps.google.com/mapfiles/kml/paddle/wht-circle.png",
+                "http://maps.google.com/mapfiles/kml/paddle/wht-diamond.png",
+                "http://maps.google.com/mapfiles/kml/paddle/wht-square.png"
+            ],
+            "Communication": [
+                "http://maps.google.com/mapfiles/kml/shapes/antenna-tower.png",
+                "http://maps.google.com/mapfiles/kml/shapes/communication_it.png",
+                "http://maps.google.com/mapfiles/kml/shapes/webcam.png"
+            ],
+            "Industrial": [
+                "http://maps.google.com/mapfiles/kml/shapes/factory.png",
+                "http://maps.google.com/mapfiles/kml/shapes/gas_station.png",
+                "http://maps.google.com/mapfiles/kml/shapes/mechanic.png",
+                "http://maps.google.com/mapfiles/kml/shapes/power.png"
+            ],
+            "Nature & Water": [
+                "http://maps.google.com/mapfiles/kml/shapes/water.png",
+                "http://maps.google.com/mapfiles/kml/shapes/tree.png",
+                "http://maps.google.com/mapfiles/kml/shapes/mountains.png",
+                "http://maps.google.com/mapfiles/kml/shapes/snow_plow.png"
+            ]
+        };
+
+        const createCustomIcon = (iconUrl, color, size, opacity) => {
+            const sizePx = parseInt(size);
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="
+                        width: ${sizePx}px; 
+                        height: ${sizePx}px; 
+                        background-color: ${color}; 
+                        opacity: ${opacity};
+                        -webkit-mask-image: url(${iconUrl});
+                        mask-image: url(${iconUrl});
+                        -webkit-mask-size: contain;
+                        mask-size: contain;
+                        -webkit-mask-repeat: no-repeat;
+                        mask-repeat: no-repeat;
+                        -webkit-mask-position: center;
+                        mask-position: center;
+                    "></div>`,
+                iconSize: [sizePx, sizePx],
+                iconAnchor: [sizePx / 2, sizePx / 2],
+                popupAnchor: [0, -sizePx / 2],
+                tooltipAnchor: [sizePx / 2 + 2, 0]
+            });
+        };
+
+        // --- Map Component ---
+        const MAP_THUMBNAILS = {
+            light: 'https://basemaps.cartocdn.com/light_all/5/15/12.png',
+            dark: 'https://basemaps.cartocdn.com/dark_all/5/15/12.png',
+            satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/12/15',
+            dtm: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/5/12/15',
+            osm: 'https://tile.openstreetmap.org/5/15/12.png'
+        };
+
+        const MAP_LAYER_LABELS = {
+            light: 'Light',
+            dark: 'Dark',
+            satellite: 'Satellite',
+            dtm: 'Terrain',
+            osm: 'Osm'
+        };
+
+        const ModernIconPicker = ({ isOpen, onClose, currentIcon, onSelect }) => {
+            const [selectedIcon, setSelectedIcon] = useState(currentIcon.url);
+            const [selectedColor, setSelectedColor] = useState(currentIcon.color);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Select Icon Design</h3>
+                            <button className="toggle-btn" onClick={onClose}><Icons.X /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="icon-preview-hero">
+                                <div className="preview-box">
+                                    <div className="masked-icon" style={{ backgroundColor: selectedColor, WebkitMaskImage: `url(${selectedIcon})`, maskImage: `url(${selectedIcon})` }}></div>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>ICON COLOR</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input type="color" value={selectedColor} onChange={e => setSelectedColor(e.target.value)} style={{ width: '40px', height: '40px', padding: 0, border: 'none', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} />
+                                        <code style={{ fontSize: '14px', fontWeight: 600 }}>{selectedColor.toUpperCase()}</code>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {Object.entries(GE_ICONS).map(([category, icons]) => (
+                                <div key={category} style={{ marginBottom: '24px' }}>
+                                    <div className="section-title">{category}</div>
+                                    <div className="icon-grid">
+                                        {icons.map(url => (
+                                            <div
+                                                key={url}
+                                                className={`icon-item ${selectedIcon === url ? 'active' : ''}`}
+                                                onClick={() => setSelectedIcon(url)}
+                                            >
+                                                <div className="masked-icon" style={{ backgroundColor: selectedIcon === url ? selectedColor : '#94a3b8', WebkitMaskImage: `url(${url})`, maskImage: `url(${url})`, width: '24px', height: '24px' }}></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="modal-header" style={{ borderTop: '1px solid var(--border)', borderBottom: 'none', justifyContent: 'flex-end', gap: '12px' }}>
+                            <button className="btn btn-outline" style={{ width: 'auto' }} onClick={onClose}>Cancel</button>
+                            <button className="btn" style={{ width: 'auto' }} onClick={() => { onSelect({ ...currentIcon, url: selectedIcon, color: selectedColor }); onClose(); }}>Apply Design</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MapLayerSwitcher = ({ mapStyle, onStyleChange }) => {
+            const [expanded, setExpanded] = useState(false);
+            const wrapperRef = useRef(null);
+
+            useEffect(() => {
+                const handleClick = (e) => {
+                    if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setExpanded(false);
+                };
+                document.addEventListener('mousedown', handleClick);
+                return () => document.removeEventListener('mousedown', handleClick);
+            }, []);
+
+            const layers = ['light', 'dark', 'satellite', 'dtm', 'osm'];
+
+            if (!expanded) {
+                return (
+                    <div className="layer-switcher" ref={wrapperRef}>
+                        <div className="layer-switcher-collapsed" onClick={() => setExpanded(true)} title="Change map style">
+                            <img src={MAP_THUMBNAILS[mapStyle]} alt={MAP_LAYER_LABELS[mapStyle]} />
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="layer-switcher" ref={wrapperRef}>
+                    <div className="layer-switcher-expanded">
+                        {layers.map(key => (
+                            <div
+                                key={key}
+                                className={`layer-tile ${mapStyle === key ? 'active' : ''}`}
+                                onClick={() => { onStyleChange(key); setExpanded(false); }}
+                            >
+                                <div className="layer-tile-img">
+                                    <img src={MAP_THUMBNAILS[key]} alt={MAP_LAYER_LABELS[key]} />
+                                </div>
+                                <div className="layer-tile-label">{MAP_LAYER_LABELS[key]}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, recenterTrigger }) => {
+            const mapRef = useRef(null);
+            const mapInst = useRef(null);
+            const tileLayerRef = useRef(null);
+            const markersRef = useRef([]);
+            const linesRef = useRef([]);
+
+            useEffect(() => {
+                if (!mapInst.current && mapRef.current) {
+                    mapInst.current = L.map(mapRef.current, { zoomControl: false, preferCanvas: true }).setView([20, 0], 2);
+                    L.control.zoom({ position: 'bottomright' }).addTo(mapInst.current);
+
+                    tileLayerRef.current = L.tileLayer(MAP_STYLES.light.url, {
+                        attribution: MAP_STYLES.light.attr,
+                        subdomains: 'abcd',
+                        maxZoom: 20
+                    }).addTo(mapInst.current);
+                }
+                return () => {
+                    if (mapInst.current) {
+                        mapInst.current.remove();
+                        mapInst.current = null;
+                        tileLayerRef.current = null;
+                    }
+                };
+            }, []);
+
+            useEffect(() => {
+                if (tileLayerRef.current && MAP_STYLES[mapStyle]) {
+                    tileLayerRef.current.setUrl(MAP_STYLES[mapStyle].url);
+                }
+            }, [mapStyle]);
+
+            useEffect(() => {
+                if (!mapInst.current) return;
+                const map = mapInst.current;
+
+                markersRef.current.forEach(m => m.remove());
+                linesRef.current.forEach(l => l.remove());
+                markersRef.current = [];
+                linesRef.current = [];
+
+                if (sites.length === 0) return;
+
+                const bounds = L.latLngBounds(sites.map(s => [s.lat, s.lng]));
+                const activeSite = selectedSite;
+
+                // Fast lookup for explicitly populated maps
+                const siteMap = new Map();
+                sites.forEach(s => siteMap.set(s.id, s));
+
+                // Disable dashed strokes on heavy canvases to prevent rendering drops
+                const disableDash = connections.length > 1000;
+
+                connections.forEach(c => {
+                    if (activeSite && !(c.from === activeSite || c.to === activeSite)) return;
+
+                    const p1 = siteMap.get(c.from);
+                    const p2 = siteMap.get(c.to);
+                    if (!p1 || !p2) return;
+
+                    const isHovered = hoveredSite === c.from || hoveredSite === c.to;
+                    const isSelectionMode = !!activeSite;
+
+                    const line = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
+                        color: lineColor,
+                        weight: isHovered ? parseInt(lineThickness) + 2 : parseInt(lineThickness),
+                        opacity: isSelectionMode ? 1.0 : (isHovered ? 1.0 : 0.4),
+                        dashArray: isHovered || isSelectionMode ? null : (disableDash ? null : '4, 4')
+                    }).addTo(map);
+                    linesRef.current.push(line);
+                });
+
+                sites.forEach(s => {
+                    let isDimmed = activeSite && activeSite !== s.id;
+                    let isHighlight = s.id === hoveredSite || s.id === activeSite;
+
+                    if (isDimmed) {
+                        const isConnected = connections.some(c => (c.from === activeSite && c.to === s.id) || (c.to === activeSite && c.from === s.id));
+                        if (isConnected) isDimmed = false;
+                    }
+
+                    const baseRadius = parseInt(pointSize);
+                    let color = pointColor;
+                    if (s.isTarget && !s.isSource && targetPointColor) {
+                        color = targetPointColor;
+                    }
+
+                    const marker = L.circleMarker([s.lat, s.lng], {
+                        radius: isHighlight ? baseRadius + 3 : baseRadius,
+                        fillColor: isHighlight ? 'var(--accent)' : (isDimmed ? '#dcdcdc' : color),
+                        color: '#ffffff',
+                        weight: isHighlight ? 2 : 1,
+                        fillOpacity: isDimmed ? 0.5 : 1
+                    }).addTo(map);
+
+                    marker.bindTooltip(`<b>${s.id}</b>`, { className: 'minimal-tooltip', direction: 'top', permanent: true });
+                    marker.on('click', () => {
+                        onSiteClick(s.id === selectedSite ? null : s.id);
+                    });
+                    markersRef.current.push(marker);
+                });
+
+                if (sites.length > 0 && !selectedSite && !hoveredSite) {
+                    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8 });
+                }
+
+            }, [sites, connections, hoveredSite, selectedSite, mapStyle, pointSize, pointColor, lineThickness, lineColor]);
+
+            useEffect(() => {
+                if (mapInst.current && sites.length > 0) {
+                    const bounds = L.latLngBounds(sites.map(s => [s.lat, s.lng]));
+                    mapInst.current.flyToBounds(bounds, { padding: [50, 50], maxZoom: 12, duration: 0.5 });
+                }
+            }, [recenterTrigger, sites]);
+
+            useEffect(() => {
+                if (!mapInst.current || !selectedSite) return;
+                const site = sites.find(s => s.id.toLowerCase() === selectedSite.toLowerCase());
+                if (site) {
+                    const currentZoom = mapInst.current.getZoom();
+                    mapInst.current.flyTo([site.lat, site.lng], currentZoom > 12 ? currentZoom : 12, { duration: 0.5 });
+                }
+            }, [selectedSite, sites]);
+
+            useEffect(() => {
+                const resizeObserver = new ResizeObserver(() => {
+                    if (mapInst.current) mapInst.current.invalidateSize();
+                });
+                if (mapRef.current) resizeObserver.observe(mapRef.current);
+                return () => resizeObserver.disconnect();
+            }, []);
+
+            return <div ref={mapRef} id="map"></div>;
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [calcMode, setCalcMode] = useState('all'); // 'all' or 'pairwise'
+            const [sourceFile, setSourceFile] = useState(null);
+            const [sourceData, setSourceData] = useState([]);
+            const [sourceColumns, setSourceColumns] = useState([]);
+            const [sourceMapping, setSourceMapping] = useState({ id: '', lat: '', lng: '' });
+
+            const [targetFile, setTargetFile] = useState(null);
+            const [targetData, setTargetData] = useState([]);
+            const [targetColumns, setTargetColumns] = useState([]);
+            const [targetMapping, setTargetMapping] = useState({ id: '', lat: '', lng: '' });
+            const [nNeighbors, setNNeighbors] = useState(3);
+            const [maxDistance, setMaxDistance] = useState(null);
+            const [activeTab, setActiveTab] = useState('map');
+            const [hoveredSite, setHoveredSite] = useState(null);
+            const [selectedSite, setSelectedSite] = useState(null);
+            const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
+            const [isDragging, setIsDragging] = useState(false);
+            const [distanceUnit, setDistanceUnit] = useState('km');
+            const [excludeZero, setExcludeZero] = useState(true);
+
+            // Icon State
+            const [sourceIcon, setSourceIcon] = useState({ url: 'http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png', color: '#1a1a1a', size: 24, opacity: 1.0 });
+            const [targetIcon, setTargetIcon] = useState({ url: 'http://maps.google.com/mapfiles/kml/shapes/antenna-tower.png', color: '#10b981', size: 24, opacity: 1.0 });
+            const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
+            const [pickerActiveTarget, setPickerActiveTarget] = useState('source');
+
+            // Appearance State
+            const [mapStyle, setMapStyle] = useState('light');
+            const [pointSize, setPointSize] = useState(4);
+            const [pointColor, setPointColor] = useState('#1a1a1a');
+            const [targetPointColor, setTargetPointColor] = useState('#10b981');
+            const [lineThickness, setLineThickness] = useState(2);
+            const [lineColor, setLineColor] = useState('#10b981');
+
+            const fileInputRef = useRef(null);
+            const [recenterTrigger, setRecenterTrigger] = useState(0);
+
+            // File parsing
+            const handleFileUpload = (e, type = 'source') => {
+                const f = e.target.files?.[0] || e.dataTransfer?.files?.[0];
+                if (!f) return;
+
+                if (type === 'source') setSourceFile(f);
+                else setTargetFile(f);
+
+                const extension = f.name.split('.').pop().toLowerCase();
+
+                const processData = (parsedData) => {
+                    if (parsedData.length > 0) {
+                        const cols = Object.keys(parsedData[0]);
+                        const guessId = cols.find(c => /id|site|name|code/i.test(c)) || cols[0];
+                        const guessLat = cols.find(c => /lat/i.test(c)) || cols[1];
+                        const guessLng = cols.find(c => /lon|lng/i.test(c)) || cols[2];
+                        const initMapping = { id: guessId, lat: guessLat, lng: guessLng };
+
+                        if (type === 'source') {
+                            setSourceColumns(cols);
+                            setSourceData(parsedData);
+                            setSourceMapping(initMapping);
+                        } else {
+                            setTargetColumns(cols);
+                            setTargetData(parsedData);
+                            setTargetMapping(initMapping);
+                        }
+                    }
+                };
+
+                if (['xlsx', 'xls'].includes(extension)) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const bstr = evt.target.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const parsedData = XLSX.utils.sheet_to_json(ws);
+                        processData(parsedData);
+                    };
+                    reader.readAsBinaryString(f);
+                } else {
+                    Papa.parse(f, {
+                        header: true,
+                        skipEmptyLines: true,
+                        dynamicTyping: true,
+                        complete: (results) => {
+                            processData(results.data);
+                        }
+                    });
+                }
+            };
+
+            // 1. Heavy Calculation (Only runs when data or parameters change)
+            const rawCalculatedData = useMemo(() => {
+                if (!sourceMapping.id || !sourceMapping.lat || !sourceMapping.lng || sourceData.length === 0) {
+                    return { sitesWithNeighbors: [], allSites: [], connections: [] };
+                }
+
+                const parsedSource = sourceData.map(row => ({
+                    id: String(row[sourceMapping.id] || ''),
+                    lat: parseFloat(row[sourceMapping.lat]),
+                    lng: parseFloat(row[sourceMapping.lng]),
+                    originalData: row
+                })).filter(s => s.id && !isNaN(s.lat) && !isNaN(s.lng));
+
+                const hasTarget = calcMode === 'pairwise' && targetData.length > 0 && targetMapping.id && targetMapping.lat && targetMapping.lng;
+                const parsedTarget = hasTarget ? targetData.map(row => ({
+                    id: String(row[targetMapping.id] || ''),
+                    lat: parseFloat(row[targetMapping.lat]),
+                    lng: parseFloat(row[targetMapping.lng]),
+                    originalData: row
+                })).filter(s => s.id && !isNaN(s.lat) && !isNaN(s.lng)) : parsedSource;
+
+                const allSitesMap = new Map();
+                parsedSource.forEach(s => allSitesMap.set(s.id, { ...s, isSource: true }));
+                if (hasTarget) {
+                    parsedTarget.forEach(s => {
+                        if (!allSitesMap.has(s.id)) allSitesMap.set(s.id, { ...s, isTarget: true, isSource: false });
+                        else allSitesMap.get(s.id).isTarget = true;
+                    });
+                } else {
+                    Array.from(allSitesMap.values()).forEach(s => s.isTarget = true);
+                }
+                const unifiedAllSites = Array.from(allSitesMap.values());
+
+                if (parsedSource.length === 0 || parsedTarget.length === 0 || nNeighbors < 1) {
+                    return { sitesWithNeighbors: parsedSource, allSites: unifiedAllSites, connections: [] };
+                }
+
+                const multiplier = distanceUnit === 'm' ? 1000 : (distanceUnit === 'ft' ? 3280.84 : (distanceUnit === 'mi' ? 0.621371 : 1));
+
+                const newSites = parsedSource.map(s1 => {
+                    let distances = parsedTarget
+                        .filter(s2 => s1.id !== s2.id)
+                        .map(s2 => ({ to: s2.id, dist: haversine(s1.lat, s1.lng, s2.lat, s2.lng) * multiplier }));
+
+                    if (excludeZero) {
+                        distances = distances.filter(d => d.dist > 0.000001);
+                    }
+
+                    if (maxDistance !== null && !isNaN(maxDistance)) {
+                        distances = distances.filter(d => d.dist <= maxDistance);
+                    }
+                    distances.sort((a, b) => a.dist - b.dist);
+                    return { ...s1, neighbors: distances.slice(0, nNeighbors) };
+                });
+
+                const conns = [];
+                const added = new Set();
+                newSites.forEach(s => {
+                    s.neighbors.forEach(n => {
+                        const pair = hasTarget ? `${s.id}|${n.to}` : [s.id, n.to].sort().join('|');
+                        if (!added.has(pair)) {
+                            added.add(pair);
+                            conns.push({ from: s.id, to: n.to, distance: n.dist });
+                        }
+                    });
+                });
+
+                return { sitesWithNeighbors: newSites, allSites: unifiedAllSites, connections: conns };
+            }, [sourceData, sourceMapping, targetData, targetMapping, nNeighbors, calcMode, maxDistance, distanceUnit, excludeZero]);
+
+            // 2. Light Filtering (Runs instantly on keystroke)
+            const { sitesWithNeighbors, allSites, connections } = useMemo(() => {
+                const { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns } = rawCalculatedData;
+                if (!selectedSite) return { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns };
+
+                const query = selectedSite.toLowerCase();
+
+                // 1. Identify Source sites that match the query
+                const matchingSources = rawSites.filter(s => s.id.toLowerCase().includes(query));
+                const matchingSourceIds = new Set(matchingSources.map(s => s.id));
+
+                // 2. Identify all neighbor IDs belonging to these sources
+                const neighborIds = new Set();
+                matchingSources.forEach(s => {
+                    s.neighbors?.forEach(n => neighborIds.add(n.to));
+                });
+
+                // 3. Filter connections to only those starting from matching sources
+                const filteredConns = rawConns.filter(c => matchingSourceIds.has(c.from));
+
+                // 4. Filter allSites to include both matching sources AND their neighbors
+                const filteredAllSites = rawAll.filter(s =>
+                    matchingSourceIds.has(s.id) || neighborIds.has(s.id)
+                );
+
+                return {
+                    sitesWithNeighbors: matchingSources,
+                    allSites: filteredAllSites,
+                    connections: filteredConns
+                };
+            }, [rawCalculatedData, selectedSite]);
+
+            // Drag patterns
+            const onDragOver = e => { e.preventDefault(); setIsDragging(true); };
+            const onDragLeave = () => setIsDragging(false);
+            const onDrop = e => { e.preventDefault(); setIsDragging(false); handleFileUpload(e); };
+
+            // Exports
+            const getGeoJSON = useCallback(() => {
+                const features = allSites.map(s => ({
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+                    properties: { id: s.id, ...s.originalData }
+                }));
+                const lineFeatures = connections.map(c => {
+                    const p1 = allSites.find(s => s.id === c.from);
+                    const p2 = allSites.find(s => s.id === c.to);
+                    return {
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] },
+                        properties: { from: c.from, to: c.to, distance: c.distance }
+                    }
+                });
+                return { type: 'FeatureCollection', features: [...features, ...lineFeatures] };
+            }, [sitesWithNeighbors, connections]);
+
+            const downloadBlob = (blob, filename) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const exportGeoJSON = () => {
+                const dataStr = JSON.stringify(getGeoJSON(), null, 2);
+                downloadBlob(new Blob([dataStr], { type: 'application/json' }), 'distances.geojson');
+            };
+
+            const exportKML = () => {
+                let exportSites = allSites;
+                let exportConns = connections;
+
+                if (selectedSite) {
+                    exportConns = connections.filter(c => c.from === selectedSite || c.to === selectedSite);
+                    const connectedSiteIds = new Set(exportConns.flatMap(c => [c.from, c.to]));
+                    if (connectedSiteIds.size === 0) connectedSiteIds.add(selectedSite); // in case n=0
+                    exportSites = allSites.filter(s => connectedSiteIds.has(s.id));
+                }
+
+                // Helper: convert hex #RRGGBB to KML aaBBGGRR
+                const hexToKml = (hex, alpha) => {
+                    const r = hex.slice(1, 3);
+                    const g = hex.slice(3, 5);
+                    const b = hex.slice(5, 7);
+                    const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
+                    return (a + b + g + r).toLowerCase();
+                };
+
+                const iconScale = Math.max(0.4, Math.min(parseInt(pointSize) / 5, 2.5));
+                const kmlPointColor = hexToKml(pointColor, 1);
+                const kmlTargetPointColor = hexToKml(targetPointColor, 1);
+                const kmlLineColor = hexToKml(lineColor, 0.9);
+                const kmlLineWidth = parseInt(lineThickness);
+
+                let kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>Site-to-Site Distance Export</name>
+  <Style id="siteStyle">
+    <IconStyle>
+      <color>${kmlPointColor}</color>
+      <scale>${iconScale}</scale>
+      <Icon>
+        <href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+      </Icon>
+    </IconStyle>
+    <LabelStyle>
+      <scale>0.7</scale>
+    </LabelStyle>
+    <BalloonStyle>
+      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+    </BalloonStyle>
+  </Style>
+  <Style id="targetSiteStyle">
+    <IconStyle>
+      <color>${kmlTargetPointColor}</color>
+      <scale>${iconScale}</scale>
+      <Icon>
+        <href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+      </Icon>
+    </IconStyle>
+    <LabelStyle>
+      <scale>0.7</scale>
+    </LabelStyle>
+    <BalloonStyle>
+      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+    </BalloonStyle>
+  </Style>
+  <Style id="activeSiteStyle">
+    <IconStyle>
+      <color>${hexToKml('#10b981', 1)}</color>
+      <scale>${iconScale * 1.2}</scale>
+      <Icon>
+        <href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+      </Icon>
+    </IconStyle>
+    <LabelStyle>
+      <scale>0.8</scale>
+    </LabelStyle>
+    <BalloonStyle>
+      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+    </BalloonStyle>
+  </Style>
+  <Style id="lineStyle">
+    <LineStyle>
+      <color>${kmlLineColor}</color>
+      <width>${kmlLineWidth}</width>
+    </LineStyle>
+    <BalloonStyle>
+      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+    </BalloonStyle>
+  </Style>
+  <Folder>
+    <name>Sites</name>
+`;
+
+                exportSites.forEach(s => {
+                    const neighborList = s.neighbors?.map(n => `${n.to} (${n.dist.toFixed(3)} ${distanceUnit})`).join(', ') || 'None';
+                    kml += `    <Placemark>
+      <name>${s.id}</name>
+      <Snippet maxLines="0"></Snippet>
+      <description><![CDATA[<div style="font-family:Arial,sans-serif;font-size:12px;">
+        <div style="padding:3px 0;"><span style="color:#555;">Lat</span>&nbsp;&nbsp;${s.lat.toFixed(6)}</div>
+        <div style="padding:3px 0;"><span style="color:#555;">Lng</span>&nbsp;&nbsp;${s.lng.toFixed(6)}</div>
+        <div style="padding:3px 0;"><span style="color:#555;">Neighbors</span>&nbsp;&nbsp;${neighborList}</div>
+      </div>]]></description>
+      <styleUrl>${s.id === selectedSite ? '#activeSiteStyle' : (s.isTarget && !s.isSource ? '#targetSiteStyle' : '#siteStyle')}</styleUrl>
+      <Point>
+        <coordinates>${s.lng},${s.lat},0</coordinates>
+      </Point>
+    </Placemark>
+`;
+                });
+
+                kml += `  </Folder>
+  <Folder>
+    <name>Connections</name>
+`;
+
+                exportConns.forEach(c => {
+                    const p1 = allSites.find(s => s.id === c.from);
+                    const p2 = allSites.find(s => s.id === c.to);
+                    if (!p1 || !p2) return;
+
+                    kml += `    <Placemark>
+      <name>${c.from} → ${c.to}</name>
+      <Snippet maxLines="0"></Snippet>
+      <description><![CDATA[<div style="font-family:Arial,sans-serif;font-size:12px;">
+        <div style="padding:3px 0;"><span style="color:#555;">From</span>&nbsp;&nbsp;<b>${c.from}</b></div>
+        <div style="padding:3px 0;"><span style="color:#555;">To</span>&nbsp;&nbsp;<b>${c.to}</b></div>
+        <div style="padding:3px 0;"><span style="color:#555;">Distance</span>&nbsp;&nbsp;<b>${c.distance.toFixed(3)} ${distanceUnit}</b></div>
+      </div>]]></description>
+      <styleUrl>#lineStyle</styleUrl>
+      <LineString>
+        <coordinates>${p1.lng},${p1.lat},0 ${p2.lng},${p2.lat},0</coordinates>
+      </LineString>
+    </Placemark>
+`;
+                });
+
+                kml += `  </Folder>
+</Document>
+</kml>`;
+                downloadBlob(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), 'distances.kml');
+            };
+
+            const exportExcel = () => {
+                const wb = XLSX.utils.book_new();
+
+                // Detailed Distances (Directed: Source -> Neighbor with Rank)
+                const detailedRows = [];
+                sitesWithNeighbors.forEach(s => {
+                    s.neighbors.forEach((n, idx) => {
+                        detailedRows.push({
+                            'Source Site': s.id,
+                            'Rank': idx + 1,
+                            'Neighbor Site': n.to,
+                            [`Distance (${distanceUnit})`]: n.dist.toFixed(3)
+                        });
+                    });
+                });
+
+                const wsDetailed = XLSX.utils.json_to_sheet(detailedRows);
+                const wsSites = XLSX.utils.json_to_sheet(sitesWithNeighbors.map(s => ({
+                    ID: s.id, Lat: s.lat, Lng: s.lng,
+                    Neighbors: s.neighbors?.map((n, idx) => `${idx + 1}. ${n.to} (${n.dist.toFixed(2)} ${distanceUnit})`).join(' | ')
+                })));
+                const wsDist = XLSX.utils.json_to_sheet(connections.map(c => ({
+                    From: c.from, To: c.to, [`Distance (${distanceUnit})`]: c.distance.toFixed(3)
+                })));
+
+                XLSX.utils.book_append_sheet(wb, wsDetailed, "Detailed_Distances");
+                XLSX.utils.book_append_sheet(wb, wsSites, "Sites");
+                XLSX.utils.book_append_sheet(wb, wsDist, "Unique_Connections");
+                XLSX.writeFile(wb, "distances.xlsx");
+            };
+
+            return (
+                <div className="layout">
+                    {/* SIDEBAR */}
+                    <div className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+                        <div className="sidebar-header">
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Icons.Gear /> Input Parameter</h2>
+                            <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)}>
+                                <Icons.X />
+                            </button>
+                        </div>
+                        <div className="sidebar-content">
+
+                            <div className="panel">
+                                <div className="section-title">1. MODE SELECTION</div>
+                                <div className="mode-selector" style={{ marginBottom: '12px' }}>
+                                    <div
+                                        className={`mode-option ${calcMode === 'all' ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setCalcMode('all');
+                                            setTargetFile(null);
+                                            setTargetData([]);
+                                            setTargetColumns([]);
+                                        }}
+                                    >
+                                        All Sites (1 File)
+                                    </div>
+                                    <div
+                                        className={`mode-option ${calcMode === 'pairwise' ? 'active' : ''}`}
+                                        onClick={() => setCalcMode('pairwise')}
+                                    >
+                                        Source & Target (2 Files)
+                                    </div>
+                                </div>
+
+                                <div className="section-title">2A. SOURCE LOCATIONS</div>
+                                <div
+                                    className={`dropzone ${isDragging ? 'dragging' : ''}`}
+                                    onDragOver={onDragOver}
+                                    onDragLeave={onDragLeave}
+                                    onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileUpload(e, 'source'); }}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <Icons.Upload />
+                                    <div style={{ color: '#666' }}>
+                                        {sourceFile ? <strong>{sourceFile.name}</strong> : 'Click or Drop Source CSV/XLSX/TXT'}
+                                    </div>
+                                    <input type="file" accept=".csv,.txt,.xlsx,.xls" ref={fileInputRef} onChange={e => handleFileUpload(e, 'source')} style={{ display: 'none' }} />
+                                </div>
+
+                                {sourceColumns.length > 0 && (
+                                    <div style={{ marginTop: '24px' }}>
+                                        <div className="form-group">
+                                            <label>Site ID Column</label>
+                                            <select className="form-control" value={sourceMapping.id} onChange={e => setSourceMapping({ ...sourceMapping, id: e.target.value })}>
+                                                <option value="">Select Column...</option>
+                                                {sourceColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Latitude Column</label>
+                                            <select className="form-control" value={sourceMapping.lat} onChange={e => setSourceMapping({ ...sourceMapping, lat: e.target.value })}>
+                                                <option value="">Select Column...</option>
+                                                {sourceColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label>Longitude Column</label>
+                                            <select className="form-control" value={sourceMapping.lng} onChange={e => setSourceMapping({ ...sourceMapping, lng: e.target.value })}>
+                                                <option value="">Select Column...</option>
+                                                {sourceColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {calcMode === 'pairwise' && (
+                                    <>
+                                        <div className="section-title" style={{ marginTop: '24px' }}>2B. TARGET LOCATIONS</div>
+                                        <div
+                                            className="dropzone"
+                                            onClick={() => document.getElementById('targetFileInput').click()}
+                                        >
+                                            <Icons.Upload />
+                                            <div style={{ color: '#666' }}>
+                                                {targetFile ? <strong>{targetFile.name}</strong> : 'Click or Drop Target CSV/XLSX/TXT'}
+                                            </div>
+                                            <input id="targetFileInput" type="file" accept=".csv,.txt,.xlsx,.xls" onChange={e => handleFileUpload(e, 'target')} style={{ display: 'none' }} />
+                                        </div>
+
+                                        {targetColumns.length > 0 && (
+                                            <div style={{ marginTop: '24px' }}>
+                                                <div className="form-group">
+                                                    <label>Target ID Column</label>
+                                                    <select className="form-control" value={targetMapping.id} onChange={e => setTargetMapping({ ...targetMapping, id: e.target.value })}>
+                                                        <option value="">Select Column...</option>
+                                                        {targetColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="form-group">
+                                                    <label>Latitude Column</label>
+                                                    <select className="form-control" value={targetMapping.lat} onChange={e => setTargetMapping({ ...targetMapping, lat: e.target.value })}>
+                                                        <option value="">Select Column...</option>
+                                                        {targetColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label>Longitude Column</label>
+                                                    <select className="form-control" value={targetMapping.lng} onChange={e => setTargetMapping({ ...targetMapping, lng: e.target.value })}>
+                                                        <option value="">Select Column...</option>
+                                                        {targetColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="panel">
+                                <div className="section-title">3. ANALYSIS CONTROLS</div>
+
+                                <div className="form-group" style={{ marginBottom: '16px' }}>
+                                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <span>Number of Nearest Neighbors (N)</span>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="50"
+                                            value={nNeighbors}
+                                            onChange={e => {
+                                                const val = parseInt(e.target.value);
+                                                if (!isNaN(val)) setNNeighbors(val);
+                                            }}
+                                            style={{
+                                                width: '60px',
+                                                padding: '4px 8px',
+                                                textAlign: 'right',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: '4px',
+                                                fontFamily: 'inherit',
+                                                fontSize: '13px',
+                                                appearance: 'none',
+                                                background: '#f1f5f9',
+                                                fontWeight: 600
+                                            }}
+                                        />
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="1" max="50"
+                                        value={nNeighbors}
+                                        onChange={e => setNNeighbors(parseInt(e.target.value))}
+                                        style={{ accentColor: '#1a1a1a' }}
+                                    />
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', gap: '16px' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <label style={{ display: 'block', marginBottom: '6px' }}>Distance Unit</label>
+                                            <select className="form-control" value={distanceUnit} onChange={e => setDistanceUnit(e.target.value)}>
+                                                <option value="km">Kilometers (km)</option>
+                                                <option value="m">Meters (m)</option>
+                                                <option value="mi">Miles (mi)</option>
+                                                <option value="ft">Feet (ft)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '16px' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+                                        <input type="checkbox" checked={excludeZero} onChange={(e) => setExcludeZero(e.target.checked)} style={{ cursor: 'pointer', accentColor: '#10b981', width: '16px', height: '16px' }} />
+                                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>Exclude 0 Distance (Identical Sites)</span>
+                                    </label>
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '16px' }}>
+                                    <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <span>Max Distance Filter ({distanceUnit})</span>
+                                        <span style={{ color: '#999', fontSize: '10px' }}>Optional</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        className="form-control"
+                                        placeholder="No limit"
+                                        value={maxDistance || ''}
+                                        onChange={e => setMaxDistance(e.target.value ? parseFloat(e.target.value) : null)}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Search & Filter (Site ID)</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Type ID to Filter Table & Map..."
+                                        value={selectedSite || ''}
+                                        list="site-id-list"
+                                        onChange={e => {
+                                            setSelectedSite(e.target.value || null);
+                                        }}
+                                    />
+                                    <datalist id="site-id-list">
+                                        {rawCalculatedData.allSites.map(s => (
+                                            <option key={s.id} value={s.id} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                            </div>
+
+                            <div className="panel">
+                                <div className="section-title">4. Map Appearance</div>
+
+                                <div style={{ marginBottom: '16px', marginTop: '16px' }}>
+                                    {calcMode === 'pairwise' ? (
+                                        <div style={{ display: 'flex', gap: '32px', marginBottom: '16px' }}>
+                                            <div>
+                                                <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'block', marginBottom: '6px' }}>Source Color</label>
+                                                <input
+                                                    type="color"
+                                                    value={pointColor}
+                                                    onChange={e => setPointColor(e.target.value)}
+                                                    style={{ width: '36px', height: '36px', padding: '0', border: '1px solid var(--border)', borderRadius: '50%', cursor: 'pointer', background: 'transparent', overflow: 'hidden' }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'block', marginBottom: '6px' }}>Target Color</label>
+                                                <input
+                                                    type="color"
+                                                    value={targetPointColor}
+                                                    onChange={e => setTargetPointColor(e.target.value)}
+                                                    style={{ width: '36px', height: '36px', padding: '0', border: '1px solid var(--border)', borderRadius: '50%', cursor: 'pointer', background: 'transparent', overflow: 'hidden' }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'block', marginBottom: '6px' }}>Point Color</label>
+                                            <input
+                                                type="color"
+                                                value={pointColor}
+                                                onChange={e => setPointColor(e.target.value)}
+                                                style={{ width: '36px', height: '36px', padding: '0', border: '1px solid var(--border)', borderRadius: '50%', cursor: 'pointer', background: 'transparent', overflow: 'hidden' }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div>
+                                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                            <span>Point Size</span>
+                                            <span>{pointSize}px</span>
+                                        </label>
+                                        <div style={{ height: '36px', display: 'flex', alignItems: 'center' }}>
+                                            <input
+                                                type="range"
+                                                min="1" max="20"
+                                                value={pointSize}
+                                                onChange={e => setPointSize(e.target.value)}
+                                                style={{ margin: 0, width: '100%' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '16px', marginBottom: '0' }}>
+                                    <div>
+                                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'block', marginBottom: '6px' }}>Line Color</label>
+                                        <input
+                                            type="color"
+                                            value={lineColor}
+                                            onChange={e => setLineColor(e.target.value)}
+                                            style={{ width: '36px', height: '36px', padding: '0', border: '1px solid var(--border)', borderRadius: '50%', cursor: 'pointer', background: 'transparent', overflow: 'hidden' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#555', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                            <span>Line Thickness</span>
+                                            <span>{lineThickness}px</span>
+                                        </label>
+                                        <div style={{ height: '36px', display: 'flex', alignItems: 'center' }}>
+                                            <input
+                                                type="range"
+                                                min="1" max="10"
+                                                value={lineThickness}
+                                                onChange={e => setLineThickness(parseInt(e.target.value))}
+                                                style={{ margin: 0, width: '100%' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="panel" style={{ borderBottom: 'none' }}>
+                                <div className="section-title">5. Export Results</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <button className="btn" disabled={allSites.length === 0} onClick={exportGeoJSON} style={{ backgroundColor: '#111827', borderColor: '#111827', color: 'white' }}>
+                                        <Icons.FileJson /> GeoJSON (Map Data)
+                                    </button>
+                                    <button className="btn" disabled={allSites.length === 0} onClick={exportKML} style={{ backgroundColor: '#111827', borderColor: '#111827', color: 'white' }}>
+                                        <Icons.Earth /> KML (Google Earth)
+                                    </button>
+                                    <button className="btn" disabled={allSites.length === 0} onClick={exportExcel} style={{ backgroundColor: '#111827', borderColor: '#111827', color: 'white' }}>
+                                        <Icons.FileSheet /> Excel Workspace (XLSX)
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    {/* MAIN CONTENT */}
+                    <div className={`main-content ${sidebarOpen ? '' : 'expanded'}`}>
+                        <div className="main-header">
+                            <button className="toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                                <Icons.Menu />
+                            </button>
+                            <div className="tabs">
+                                <button className={activeTab === 'map' ? 'active' : ''} onClick={() => setActiveTab('map')}>
+                                    <Icons.Map /> <span className="tab-text">Map</span> <span className="tab-text-desktop">Site-to-Site Distance Calculator</span>
+                                </button>
+                                <button className={activeTab === 'table' ? 'active' : ''} onClick={() => setActiveTab('table')}>
+                                    <Icons.Table /> <span className="tab-text">Results</span> <span className="tab-text-desktop">Data Table & Results</span>
+                                </button>
+                                <button className={activeTab === 'geojson' ? 'active' : ''} onClick={() => setActiveTab('geojson')}>
+                                    <Icons.Code /> <span className="tab-text">JSON</span> <span className="tab-text-desktop">&lt;&gt; GeoJSON Payload</span>
+                                </button>
+                            </div>
+
+                            <div style={{ flex: 1 }}></div>
+
+                        </div>
+
+                        <div className="tab-content">
+                            {/* MAP TAB */}
+                            <div style={{ display: activeTab === 'map' ? 'block' : 'none', height: '100%', position: 'relative' }}>
+                                <MapLayerSwitcher mapStyle={mapStyle} onStyleChange={setMapStyle} />
+                                <MapView
+                                    sites={allSites}
+                                    connections={connections}
+                                    hoveredSite={hoveredSite}
+                                    selectedSite={selectedSite}
+                                    onSiteClick={setSelectedSite}
+                                    mapStyle={mapStyle}
+                                    pointSize={pointSize}
+                                    pointColor={pointColor}
+                                    targetPointColor={targetPointColor}
+                                    lineThickness={lineThickness}
+                                    lineColor={lineColor}
+                                    recenterTrigger={recenterTrigger}
+                                />
+                            </div>
+
+                            {/* RESULT TABLE (Unified) */}
+                            {activeTab === 'table' && (
+                                <div className="table-container">
+                                    {sitesWithNeighbors.length === 0 ? (
+                                        <div style={{ padding: '32px', textAlign: 'center', color: '#666' }}>No data loaded.</div>
+                                    ) : (
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Source Site</th>
+                                                    <th>Rank</th>
+                                                    <th>Neighbor Site</th>
+                                                    <th>Distance ({distanceUnit})</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {sitesWithNeighbors.flatMap(s => (s.neighbors || []).map((n, idx) => ({ ...n, from: s.id, rank: idx + 1 }))).map((row, idx) => (
+                                                    <tr
+                                                        key={`${row.from}-${row.to}-${idx}`}
+                                                        onClick={() => {
+                                                            setSelectedSite(row.from);
+                                                            setActiveTab('map');
+                                                        }}
+                                                    >
+                                                        <td style={{ fontWeight: 600 }}>{row.from}</td>
+                                                        <td style={{ color: '#10b981', fontWeight: 600 }}>#{row.rank}</td>
+                                                        <td>{row.to}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{row.dist.toFixed(3)} {distanceUnit}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* GEOJSON TAB */}
+                            {activeTab === 'geojson' && (
+                                <textarea
+                                    readOnly
+                                    value={sitesWithNeighbors.length > 0 ? JSON.stringify(getGeoJSON(), null, 2) : 'No data loaded.'}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
