@@ -2338,7 +2338,7 @@
                                     {/* 2. SOURCE MAPPING */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('srcMap')}>
-                                            <span className="accordion-title">2. Source Mapping</span>
+                                            <span className="accordion-title">4. Source Mapping</span>
                                             <ChevronIcon open={accordionOpen.srcMap} />
                                         </div>
                                         {accordionOpen.srcMap && (
@@ -2371,11 +2371,11 @@
                                         )}
                                     </div>
 
-                                    {/* 3. TARGET MAPPING */}
+                                    {/* 4. TARGET MAPPING */}
                                     {calcMode === 'pairwise' && (
                                         <div className="accordion-section">
                                             <div className="accordion-header" onClick={() => toggleAccordion('tgtMap')}>
-                                                <span className="accordion-title">3. Target Mapping</span>
+                                                <span className="accordion-title">4. Target Mapping</span>
                                                 <ChevronIcon open={accordionOpen.tgtMap} />
                                             </div>
                                             {accordionOpen.tgtMap && (
@@ -2414,7 +2414,7 @@
                                 {pfcTab === 'style' && (<>
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('style')}>
-                                            <span className="accordion-title">3. Map Appearance</span>
+                                            <span className="accordion-title">5. Map Appearance</span>
                                             <ChevronIcon open={accordionOpen.style} />
                                         </div>
                                         {accordionOpen.style && (
@@ -2508,10 +2508,10 @@
 
                                 {/* FILTER */}
                                 {pfcTab === 'filter' && (<>
-                                    {/* 4. SEARCH & FILTER */}
+                                    {/* 6. SEARCH & FILTER */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('search')}>
-                                            <span className="accordion-title">4. Search &amp; Filter</span>
+                                            <span className="accordion-title">6. Search &amp; Filter</span>
                                             <ChevronIcon open={accordionOpen.search} />
                                         </div>
                                         {accordionOpen.search && (
@@ -2543,10 +2543,10 @@
                                         )}
                                     </div>
 
-                                    {/* 3. ANALYSIS CONTROLS */}
+                                    {/* 7. ANALYSIS CONTROLS */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('controls')}>
-                                            <span className="accordion-title">3. Analysis Controls</span>
+                                            <span className="accordion-title">7. Analysis Controls</span>
                                             <ChevronIcon open={accordionOpen.controls} />
                                         </div>
                                         {accordionOpen.controls && (
@@ -2600,10 +2600,10 @@
                                         )}
                                     </div>
 
-                                    {/* 6. ACTIONS */}
+                                    {/* 8. ACTIONS */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('actions')}>
-                                            <span className="accordion-title">6. Actions</span>
+                                            <span className="accordion-title">8. Actions</span>
                                             <ChevronIcon open={accordionOpen.actions} />
                                         </div>
                                         {accordionOpen.actions && (
