@@ -1630,6 +1630,7 @@
             const [filterSearch, setFilterSearch] = useState('');
             const [filterColumn, setFilterColumn] = useState('');
             const [filterValue, setFilterValue] = useState('');
+            const [matchFilter, setMatchFilter] = useState('All'); 
             
             // POPUP COLUMNS STATE
             const [popupColumns, setPopupColumns] = useState(new Set());
@@ -1910,10 +1911,27 @@
                     rawConns = rawConns.filter(c => filteredIds.has(c.from));
                 }
 
-                // Removed selectedSite filtering entirely so the map data isn't deleted when clicking a site.
+                // Check Match Filter logic
+                if (matchFilter !== 'All') {
+                    // Find IDs of all sites that are part of any connection (either as source or target)
+                    const connectedSourceIds = new Set(rawConns.map(c => c.from));
+                    const connectedTargetIds = new Set(rawConns.map(c => c.to));
+
+                    rawAll = rawAll.filter(s => {
+                        const isConnected = connectedSourceIds.has(s.id) || connectedTargetIds.has(s.id);
+                        if (matchFilter === 'Match') return isConnected;
+                        if (matchFilter === 'Not Match') return !isConnected;
+                        return true;
+                    });
+
+                    // Sync the rawSites and connections with the newly filtered rawAll list
+                    const allowedIds = new Set(rawAll.map(s => s.id));
+                    rawSites = rawSites.filter(s => allowedIds.has(s.id));
+                    rawConns = rawConns.filter(c => allowedIds.has(c.from) && allowedIds.has(c.to));
+                }
                 
                 return { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns };
-            }, [calculatedData, filterSearch, filterColumn, filterValue]);
+            }, [calculatedData, filterSearch, filterColumn, filterValue, matchFilter]);
 
             // Zoom to site when searching by site code
             const prevFilterSearchRef = useRef('');
@@ -2594,6 +2612,18 @@
                                                         </select>
                                                     </div>
                                                 </div>
+                                                
+                                                {/* NEW: Check Match Filter UI */}
+                                                <div className="form-group" style={{ marginTop: '14px', marginBottom: 0 }}>
+                                                    <label>Check Match</label>
+                                                    <select className="form-control" value={matchFilter} onChange={e => setMatchFilter(e.target.value)}>
+                                                        <option value="All">All</option>
+                                                        <option value="Match">Match</option>
+                                                        <option value="Not Match">Not Match</option>
+                                                    </select>
+                                                </div>
+                                                {/* END NEW UI */}
+                                                
                                             </div>
                                         )}
                                     </div>
