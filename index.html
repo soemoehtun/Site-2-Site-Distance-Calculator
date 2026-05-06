@@ -263,7 +263,7 @@
         .modal-body { display: none; }
         .modal-footer { display: none; }
         .icon-grid { display: none; }
-        .icon-item { display: none; }
+        .icon-item {
             padding: 2px;
             display: flex;
             align-items: center;
@@ -935,6 +935,46 @@
             background: transparent;
             border: none;
         }
+
+        /* ------------------------------------------------------------- */
+        /* Clean Leaflet Popup Overrides (Point File Creator Style)      */
+        /* ------------------------------------------------------------- */
+        .leaflet-popup-content-wrapper {
+            background: #ffffff;
+            color: #1e293b;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 14px 18px; 
+            border: 1px solid #e2e8f0;
+        }
+        .leaflet-popup-content {
+            margin: 0;
+            min-width: 160px;
+            font-family: 'Inter', sans-serif;
+            line-height: 1.4;
+        }
+        .leaflet-popup-tip {
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            border-right: 1px solid #e2e8f0;
+            box-shadow: 2px 2px 4px rgba(0,0,0,0.05);
+        }
+        .leaflet-container a.leaflet-popup-close-button {
+            color: #64748b;
+            padding: 10px 10px 0 0;
+            width: 20px;
+            height: 20px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s ease;
+            font-weight: 400;
+        }
+        .leaflet-container a.leaflet-popup-close-button:hover {
+            color: #0f172a;
+            background: transparent;
+        }
     </style>
 </head>
 
@@ -1264,7 +1304,7 @@
             );
         };
 
-        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconSize, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit }) => {
+        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconSize, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget }) => {
             const mapRef = useRef(null);
             const mapInst = useRef(null);
             const tileLayerRef = useRef(null);
@@ -1344,12 +1384,17 @@
                         dashArray: disableDash ? null : '4, 4'
                     }).addTo(map);
 
-                    // Add popup to line showing distance
+                    // Add popup to line showing distance (matching clean design)
                     const distVal = c.distance !== undefined ? c.distance : 0;
                     const arrow = singleIconMode ? ' ⇄ ' : ' → ';
-                    line.bindPopup(`<div style="font-family:Arial,sans-serif;text-align:center;">
-                        <b>${c.from}${arrow}${c.to}</b><br/>
-                        <span style="color:#64748b;">${distVal.toFixed(3)} ${distanceUnit}</span>
+                    line.bindPopup(`
+                    <div style="font-family: 'Inter', sans-serif;">
+                        <div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;">
+                            ${c.from}${arrow}${c.to}
+                        </div>
+                        <div style="font-size: 12px; color: #1e293b; margin-bottom: 4px;">
+                            <strong>Distance:</strong> ${distVal.toFixed(3)} ${distanceUnit}
+                        </div>
                     </div>`);
 
                     // Save reference to modify later without rebuilding
@@ -1375,21 +1420,36 @@
                     const markerIcon = createCustomIcon(iconUrlUse, colorUse, scaledSize, opacityUse);
                     const marker = L.marker([s.lat, s.lng], { icon: markerIcon });
 
-                    // Build popup content
-                    let popupHtml = '';
+                    // Build user-defined custom popup fields first
+                    let extraInfoHtml = '';
+                    if (s.originalData) {
+                        const colsToUse = (!singleIconMode && s.isTarget && !s.isSource) ? popupColumnsTarget : popupColumns;
+                        colsToUse.forEach(col => {
+                            const val = s.originalData[col];
+                            if (val !== undefined && val !== null && val !== '') {
+                                extraInfoHtml += `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
+                                    <strong>${col}:</strong> ${val}
+                                </div>`;
+                            }
+                        });
+                    }
+
+                    // Build Neighbors / Parents list
+                    let neighborHtml = '';
                     const siteWithNeighbors = sitesWithNeighbors?.find(sw => sw.id === s.id);
                     
                     if (s.isSource || singleIconMode) {
-                        // Source site - show its neighbors
-                        const neighborList = siteWithNeighbors?.neighbors?.map((n, idx) => `${idx + 1}. ${n.to} (${n.dist.toFixed(3)} ${distanceUnit})`).join('<br/>') || 'None';
-                        popupHtml = `<div style="font-family:Arial,sans-serif;min-width:150px;">
-                            <b style="font-size:14px;">${s.id}</b><br/>
-                            <span style="color:#64748b;font-size:11px;">Source Site</span><br/><br/>
-                            <b>Nearest ${nNeighbors || 3} Neighbors:</b><br/>
+                        const neighborList = siteWithNeighbors?.neighbors?.map((n, idx) => 
+                            `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
+                                <strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
+                            </div>`
+                        ).join('') || `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
+                        
+                        neighborHtml = `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;">
+                            <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase;">Nearest ${nNeighbors || 3} Neighbors</div>
                             ${neighborList}
                         </div>`;
                     } else if (s.isTarget) {
-                        // Neighbor site - find parent source
                         const parentSources = [];
                         sitesWithNeighbors?.forEach(sw => {
                             sw.neighbors?.forEach(n => {
@@ -1399,33 +1459,35 @@
                             });
                         });
                         if (parentSources.length > 0) {
-                            const sourceList = parentSources.map(ps => `${ps.id} (${ps.dist.toFixed(3)} ${distanceUnit})`).join('<br/>');
-                            popupHtml = `<div style="font-family:Arial,sans-serif;min-width:150px;">
-                                <b style="font-size:14px;">${s.id}</b><br/>
-                                <span style="color:#64748b;font-size:11px;">Neighbor Site</span><br/><br/>
-                                <b>Parent Source Sites:</b><br/>
+                            const sourceList = parentSources.map(ps => 
+                                `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
+                                    <strong>${ps.id}:</strong> ${ps.dist.toFixed(3)} ${distanceUnit}
+                                </div>`
+                            ).join('');
+                            neighborHtml = `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase;">Parent Source Sites</div>
                                 ${sourceList}
                             </div>`;
-                        } else {
-                            popupHtml = `<div style="font-family:Arial,sans-serif;min-width:150px;">
-                                <b style="font-size:14px;">${s.id}</b><br/>
-                                <span style="color:#64748b;font-size:11px;">Neighbor Site</span>
-                            </div>`;
                         }
-                    } else {
-                        popupHtml = `<b>${s.id}</b>`;
                     }
-                    
+
+                    // Clean, minimal popup structure matching reference image
+                    let popupHtml = `
+                    <div style="font-family: 'Inter', sans-serif; min-width: 160px; max-height: 280px; overflow-y: auto;">
+                        <div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-right: 16px;">
+                            ${s.id}
+                        </div>
+                        <div>
+                            ${extraInfoHtml}
+                        </div>
+                        ${neighborHtml}
+                    </div>`;
+
                     marker.bindPopup(popupHtml);
 
                     if (showSiteLabels) {
                         marker.bindTooltip(`<b>${s.id}</b>`, { className: 'minimal-tooltip', direction: 'top', permanent: true });
                     }
-                    
-                    // Functional state update avoids stale closures inside the loop
-                    marker.on('click', () => {
-                        onSiteClick(prev => prev === s.id ? null : s.id);
-                    });
 
                     // Hover handlers - store in ref for instant access
                     hoverHandlersRef.current.set(s.id, {
@@ -1456,34 +1518,19 @@
 
                 cluster.addLayers(newMarkers);
 
-            }, [sites, connections, mapStyle, iconSize, iconColor, lineThickness, lineColor, lineOpacity, markerIconUrl, iconOpacity, showSiteLabels, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, targetPointColor, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit]);
+            }, [sites, connections, mapStyle, iconSize, iconColor, lineThickness, lineColor, lineOpacity, markerIconUrl, iconOpacity, showSiteLabels, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, targetPointColor, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget]);
 
-            // 3. Selection/Hover Handling (Instant style updates, NO re-rendering!)
+            // 3. Hover Handling (Instant style updates, NO active filtering on click)
             useEffect(() => {
-                const activeSite = selectedSite;
-                
-                // Pre-compute connected nodes for O(1) fast lookup
-                const activeSiteConnections = new Set();
-                if (activeSite) {
-                    connections.forEach(c => {
-                        if (c.from === activeSite) activeSiteConnections.add(c.to);
-                        if (c.to === activeSite) activeSiteConnections.add(c.from);
-                    });
-                }
-
                 // Mutate line styles dynamically
                 linesMapRef.current.forEach((data) => {
                     const { layer, from, to } = data;
                     const isHovered = hoveredSite === from || hoveredSite === to;
-                    const isSelectionMode = !!activeSite;
-                    const isConnected = activeSite === from || activeSite === to;
 
                     let op = lineOpacity / 100;
                     let wt = parseInt(lineThickness);
 
-                    if (isSelectionMode) {
-                        op = isConnected ? 1.0 : 0.05; // Dim unconnected lines
-                    } else if (isHovered) {
+                    if (isHovered) {
                         op = 1.0;
                         wt += 2;
                     }
@@ -1491,30 +1538,23 @@
                     layer.setStyle({
                         weight: wt,
                         opacity: op,
-                        dashArray: isHovered || (isSelectionMode && isConnected) ? null : (connections.length > 1000 ? null : '4, 4')
+                        dashArray: isHovered ? null : (connections.length > 1000 ? null : '4, 4')
                     });
                 });
 
                 // Mutate marker opacities dynamically
                 markersMapRef.current.forEach((layer, id) => {
-                    const isSelectionMode = !!activeSite;
-                    let isHighlight = id === hoveredSite || id === activeSite;
+                    let isHighlight = id === hoveredSite;
                     let finalOp = 1.0;
-
-                    if (isSelectionMode && id !== activeSite) {
-                        if (!activeSiteConnections.has(id)) {
-                            finalOp = 0.2; // Dim markers not connected to selected site
-                        }
-                    }
 
                     if (layer.setOpacity) layer.setOpacity(finalOp);
                     if (isHighlight && layer.setZIndexOffset) layer.setZIndexOffset(1000);
                     else if (layer.setZIndexOffset) layer.setZIndexOffset(0);
                 });
 
-            }, [hoveredSite, selectedSite, lineOpacity, lineThickness, connections]);
+            }, [hoveredSite, lineOpacity, lineThickness, connections]);
 
-            // Auto-pan behavior
+            // Auto-pan behavior on table row selection
             useEffect(() => {
                 if (mapInst.current && sites.length > 0) {
                     const bounds = L.latLngBounds(sites.map(s => [s.lat, s.lng]));
@@ -1590,6 +1630,8 @@
             const [filterSearch, setFilterSearch] = useState('');
             const [filterColumn, setFilterColumn] = useState('');
             const [filterValue, setFilterValue] = useState('');
+            
+            // POPUP COLUMNS STATE
             const [popupColumns, setPopupColumns] = useState(new Set());
             const [popupColumnsTarget, setPopupColumnsTarget] = useState(new Set());
 
@@ -1732,17 +1774,24 @@
 
                     for (let i = currentIndex; i < end; i++) {
                         const s1 = parsedSource[i];
-                        const allowSelf = !hasTarget;
                         
                         let distances = parsedTarget
-                            .filter(s2 => allowSelf || s1.id !== s2.id)
+                            .filter(s2 => {
+                                // IMPORTANT LOGIC FIX:
+                                // 1-file mode (!hasTarget): We MUST strictly exclude the exact same site (same ID) from being its own neighbor regardless of checkbox.
+                                // 2-file mode (pairwise): Sites with the same ID shouldn't be artificially excluded.
+                                if (!hasTarget && s1.id === s2.id) return false;
+                                return true;
+                            })
                             .map(s2 => {
                                 const d = haversine(s1.lat, s1.lng, s2.lat, s2.lng) * multiplier;
                                 return { to: s2.id, dist: d };
                             });
 
+                        // Checkbox strictly checks for IDENTICAL physical sites
+                        // 1e-6 safely handles any minute float rounding errors ensuring 0 is captured
                         if (excludeZero) {
-                            distances = distances.filter(d => d.dist > 0.000001);
+                            distances = distances.filter(d => d.dist > 1e-6);
                         }
 
                         if (maxDistance !== null && !isNaN(maxDistance)) {
@@ -1852,78 +1901,7 @@
                         return true;
                     });
                 }
-                // Filter by selected site (only if no search)
-                else if (selectedSite) {
-                    const query = selectedSite.toLowerCase();
-
-                    // Create isNeighbor, isSource, isTarget maps before filtering
-                    const isNeighborMap = new Map();
-                    const isSourceMap = new Map();
-                    const isTargetMap = new Map();
-                    rawAll.forEach(s => {
-                        isNeighborMap.set(s.id, !!s.isNeighbor);
-                        isSourceMap.set(s.id, !!s.isSource);
-                        isTargetMap.set(s.id, !!s.isTarget);
-                    });
-
-                    // Check if clicked site is a source site or a neighbor site
-                    const clickedSiteIsSource = rawSites.some(s => s.id.toLowerCase().includes(query));
-
-                    if (clickedSiteIsSource) {
-                        rawSites = rawSites.filter(s => {
-                            if (!s.id.toLowerCase().includes(query)) return false;
-                            s.isNeighbor = isNeighborMap.get(s.id) || false;
-                            return true;
-                        });
-                        const matchingSourceIds = new Set(rawSites.map(s => s.id));
-                        const neighborIds = new Set();
-                        rawSites.forEach(s => {
-                            s.neighbors?.forEach(n => neighborIds.add(n.to));
-                        });
-                        rawConns = rawConns.filter(c => 
-                            matchingSourceIds.has(c.from) || matchingSourceIds.has(c.to) || 
-                            neighborIds.has(c.from) || neighborIds.has(c.to)
-                        );
-                        rawAll = rawAll.filter(s => {
-                            const keep = matchingSourceIds.has(s.id) || neighborIds.has(s.id);
-                            if (keep) {
-                                s.isNeighbor = isNeighborMap.get(s.id) || false;
-                                s.isSource = isSourceMap.get(s.id) || matchingSourceIds.has(s.id);
-                                s.isTarget = isTargetMap.get(s.id) || neighborIds.has(s.id);
-                            }
-                            return keep;
-                        });
-                    } else {
-                        // Clicked on a neighbor site - show that neighbor and its source
-                        const matchingSourceIds = new Set();
-                        rawSites.forEach(s => {
-                            s.neighbors?.forEach(n => {
-                                if (n.to.toLowerCase().includes(query)) {
-                                    matchingSourceIds.add(s.id);
-                                }
-                            });
-                        });
-                        const neighborIds = new Set();
-                        rawSites.filter(s => matchingSourceIds.has(s.id)).forEach(s => {
-                            s.neighbors?.forEach(n => neighborIds.add(n.to));
-                        });
-                        rawSites = rawSites.filter(s => matchingSourceIds.has(s.id));
-                        rawConns = rawConns.filter(c => 
-                            matchingSourceIds.has(c.from) || matchingSourceIds.has(c.to) || 
-                            neighborIds.has(c.from) || neighborIds.has(c.to)
-                        );
-                        rawAll = rawAll.filter(s => {
-                            const keep = matchingSourceIds.has(s.id) || neighborIds.has(s.id);
-                            if (keep) {
-                                s.isNeighbor = isNeighborMap.get(s.id) || false;
-                                s.isSource = isSourceMap.get(s.id) || matchingSourceIds.has(s.id);
-                                s.isTarget = isTargetMap.get(s.id) || neighborIds.has(s.id);
-                            }
-                            return keep;
-                        });
-                    }
-                }
-
+                
                 // Filter by column and value
                 if (filterColumn && filterValue) {
                     rawSites = rawSites.filter(s => String(s.originalData?.[filterColumn] || '') === String(filterValue));
@@ -1932,8 +1910,10 @@
                     rawConns = rawConns.filter(c => filteredIds.has(c.from));
                 }
 
+                // Removed selectedSite filtering entirely so the map data isn't deleted when clicking a site.
+                
                 return { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns };
-            }, [calculatedData, selectedSite, filterSearch, filterColumn, filterValue]);
+            }, [calculatedData, filterSearch, filterColumn, filterValue]);
 
             // Zoom to site when searching by site code
             const prevFilterSearchRef = useRef('');
@@ -2085,15 +2065,28 @@
                 sitesWithNeighbors.forEach(s => neighborDataMap.set(s.id, s));
 
                 allSites.forEach(s => {
-                    const siteData = neighborDataMap.get(s.id);
-                    let descHtml = '';
+                    // Custom KML Info Box Injection
+                    let extraInfoHtml = '';
+                    if (s.originalData) {
+                         const colsToUse = (hasTarget && s.isTarget && !s.isSource) ? popupColumnsTarget : popupColumns;
+                         colsToUse.forEach(col => {
+                             const val = s.originalData[col];
+                             if (val !== undefined && val !== null && val !== '') {
+                                 extraInfoHtml += `<div style="margin-bottom:2px;"><b>${col}:</b> ${val}</div>`;
+                             }
+                         });
+                    }
 
-                    // If it is a source site (or 1 file mode), show the neighbor list
+                    let neighborHtml = '';
+                    const siteData = neighborDataMap.get(s.id);
+
                     if (s.isSource || !hasTarget) {
                         const neighborList = siteData?.neighbors?.map((n, idx) => `${idx + 1}. ${n.to} (${n.dist.toFixed(3)} ${distanceUnit})`).join('<br/>') || 'None';
-                        descHtml = `<b>Nearest ${nNeighbors} Neighbors:</b><br/>${neighborList}`;
+                        neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
+                            <b>Nearest ${nNeighbors} Neighbors:</b><br/>
+                            ${neighborList}
+                        </div>`;
                     } else if (s.isTarget && !s.isSource) {
-                        // Neighbor site - find parent source(s)
                         const parentSources = [];
                         sitesWithNeighbors.forEach(sw => {
                             sw.neighbors?.forEach(n => {
@@ -2104,11 +2097,17 @@
                         });
                         if (parentSources.length > 0) {
                             const sourceList = parentSources.map(ps => `${ps.id} (${ps.dist.toFixed(3)} ${distanceUnit})`).join('<br/>');
-                            descHtml = `<b>Parent Source Sites:</b><br/>${sourceList}`;
-                        } else {
-                            descHtml = `<b>Neighbor Site</b>`;
+                            neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
+                                <b>Parent Source Sites:</b><br/>
+                                ${sourceList}
+                            </div>`;
                         }
                     }
+
+                    let descHtml = `<div style="font-family:Arial,sans-serif;font-size:12px;min-width:200px;">
+                        ${extraInfoHtml}
+                        ${neighborHtml}
+                    </div>`;
 
                     let styleUrl = '#sourceStyle';
                     if (hasTarget && s.isTarget && !s.isSource) {
@@ -2117,9 +2116,7 @@
 
                     kml += `    <Placemark>
       <name>${s.id}</name>
-      <description><![CDATA[<div style="font-family:Arial,sans-serif;font-size:12px;">
-        ${descHtml}
-      </div>]]></description>
+      <description><![CDATA[${descHtml}]]></description>
       <styleUrl>${styleUrl}</styleUrl>
       <Point>
         <coordinates>${s.lng},${s.lat},0</coordinates>
@@ -2166,7 +2163,7 @@
                             'Source Site': s.id,
                             'Rank': idx + 1,
                             'Neighbor Site': n.to,
-                            [`Distance (${distanceUnit})`]: n.dist.toFixed(3)
+                            [`Distance (${distanceUnit})`]: Number(n.dist.toFixed(3)) // Corrected to export as Number data type
                         });
                     });
                 });
@@ -2197,7 +2194,7 @@
                 }));
 
                 const wsDist = XLSX.utils.json_to_sheet(calculatedData.connections.map(c => ({
-                    From: c.from, To: c.to, [`Distance (${distanceUnit})`]: c.distance.toFixed(3)
+                    From: c.from, To: c.to, [`Distance (${distanceUnit})`]: Number(c.distance.toFixed(3)) // Corrected to export as Number data type
                 })));
 
                 XLSX.utils.book_append_sheet(wb, wsDetailed, "Detailed_Distances");
@@ -2207,7 +2204,8 @@
             };
 
             const [pfcTab, setPfcTab] = useState('upload');
-            const [accordionOpen, setAccordionOpen] = useState({ mode: true, source: true, target: true, search: true, controls: true, actions: true, columns: true, srcMap: true, tgtMap: true, style: true });
+            // Accordion State
+            const [accordionOpen, setAccordionOpen] = useState({ mode: true, source: true, target: true, search: true, controls: true, actions: true, columns: true, srcMap: true, tgtMap: true, popupCols: true, style: true });
             const toggleAccordion = (key) => setAccordionOpen(prev => ({ ...prev, [key]: !prev[key] }));
 
             const ChevronIcon = ({ open }) => (
@@ -2335,7 +2333,7 @@
 
                                 {/* COLUMNS */}
                                 {pfcTab === 'columns' && (<>
-                                    {/* 2. SOURCE MAPPING */}
+                                    {/* 4. SOURCE MAPPING */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('srcMap')}>
                                             <span className="accordion-title">4. Source Mapping</span>
@@ -2366,16 +2364,15 @@
                                                         </select>
                                                     </div>
                                                 </div>
-
                                             </div>
                                         )}
                                     </div>
 
-                                    {/* 4. TARGET MAPPING */}
+                                    {/* 5. TARGET MAPPING */}
                                     {calcMode === 'pairwise' && (
                                         <div className="accordion-section">
                                             <div className="accordion-header" onClick={() => toggleAccordion('tgtMap')}>
-                                                <span className="accordion-title">4. Target Mapping</span>
+                                                <span className="accordion-title">5. Target Mapping</span>
                                                 <ChevronIcon open={accordionOpen.tgtMap} />
                                             </div>
                                             {accordionOpen.tgtMap && (
@@ -2403,18 +2400,76 @@
                                                             </select>
                                                         </div>
                                                     </div>
-
                                                 </div>
                                             )}
                                         </div>
                                     )}
+
+                                    {/* 6. POPUP COLUMNS */}
+                                    <div className="accordion-section">
+                                        <div className="accordion-header" onClick={() => toggleAccordion('popupCols')}>
+                                            <span className="accordion-title">6. Popup Columns</span>
+                                            <ChevronIcon open={accordionOpen.popupCols} />
+                                        </div>
+                                        {accordionOpen.popupCols && (
+                                            <div className="accordion-body">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                                                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}>
+                                                        {calcMode === 'pairwise' ? 'Source Site Data' : 'Site Data'}
+                                                    </span>
+                                                    <div style={{ fontSize: '11px' }}>
+                                                        <span style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, marginRight: '10px' }} onClick={() => setPopupColumns(new Set(sourceColumns))}>All Columns</span>
+                                                        <span style={{ color: '#64748b', cursor: 'pointer', fontWeight: 600 }} onClick={() => setPopupColumns(new Set())}>Clear</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', maxHeight: '160px', overflowY: 'auto', background: '#f8fafc' }}>
+                                                    {sourceColumns.map(col => (
+                                                        <label key={col} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer' }}>
+                                                            <input type="checkbox" checked={popupColumns.has(col)} onChange={() => {
+                                                                const next = new Set(popupColumns);
+                                                                if (next.has(col)) next.delete(col); else next.add(col);
+                                                                setPopupColumns(next);
+                                                            }} style={{ accentColor: 'var(--accent)', width: '14px', height: '14px', cursor: 'pointer' }} />
+                                                            <span style={{ fontSize: '12px', color: '#334155' }}>{col}</span>
+                                                        </label>
+                                                    ))}
+                                                    {sourceColumns.length === 0 && <span style={{fontSize:'11px', color:'#94a3b8'}}>No columns available</span>}
+                                                </div>
+
+                                                {calcMode === 'pairwise' && (
+                                                    <>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', margin: '16px 0 8px 0' }}>
+                                                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}>Target Site Data</span>
+                                                            <div style={{ fontSize: '11px' }}>
+                                                                <span style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, marginRight: '10px' }} onClick={() => setPopupColumnsTarget(new Set(targetColumns))}>All Columns</span>
+                                                                <span style={{ color: '#64748b', cursor: 'pointer', fontWeight: 600 }} onClick={() => setPopupColumnsTarget(new Set())}>Clear</span>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', maxHeight: '160px', overflowY: 'auto', background: '#f8fafc' }}>
+                                                            {targetColumns.map(col => (
+                                                                <label key={col} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer' }}>
+                                                                    <input type="checkbox" checked={popupColumnsTarget.has(col)} onChange={() => {
+                                                                        const next = new Set(popupColumnsTarget);
+                                                                        if (next.has(col)) next.delete(col); else next.add(col);
+                                                                        setPopupColumnsTarget(next);
+                                                                    }} style={{ accentColor: 'var(--accent)', width: '14px', height: '14px', cursor: 'pointer' }} />
+                                                                    <span style={{ fontSize: '12px', color: '#334155' }}>{col}</span>
+                                                                </label>
+                                                            ))}
+                                                            {targetColumns.length === 0 && <span style={{fontSize:'11px', color:'#94a3b8'}}>No columns available</span>}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </>)}
 
                                     {/* STYLE */}
                                 {pfcTab === 'style' && (<>
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('style')}>
-                                            <span className="accordion-title">5. Map Appearance</span>
+                                            <span className="accordion-title">7. Map Appearance</span>
                                             <ChevronIcon open={accordionOpen.style} />
                                         </div>
                                         {accordionOpen.style && (
@@ -2508,10 +2563,10 @@
 
                                 {/* FILTER */}
                                 {pfcTab === 'filter' && (<>
-                                    {/* 6. SEARCH & FILTER */}
+                                    {/* 8. SEARCH & FILTER */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('search')}>
-                                            <span className="accordion-title">6. Search &amp; Filter</span>
+                                            <span className="accordion-title">8. Search &amp; Filter</span>
                                             <ChevronIcon open={accordionOpen.search} />
                                         </div>
                                         {accordionOpen.search && (
@@ -2543,10 +2598,10 @@
                                         )}
                                     </div>
 
-                                    {/* 7. ANALYSIS CONTROLS */}
+                                    {/* 9. ANALYSIS CONTROLS */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('controls')}>
-                                            <span className="accordion-title">7. Analysis Controls</span>
+                                            <span className="accordion-title">9. Analysis Controls</span>
                                             <ChevronIcon open={accordionOpen.controls} />
                                         </div>
                                         {accordionOpen.controls && (
@@ -2600,10 +2655,10 @@
                                         )}
                                     </div>
 
-                                    {/* 8. ACTIONS */}
+                                    {/* 10. ACTIONS */}
                                     <div className="accordion-section">
                                         <div className="accordion-header" onClick={() => toggleAccordion('actions')}>
-                                            <span className="accordion-title">8. Actions</span>
+                                            <span className="accordion-title">10. Actions</span>
                                             <ChevronIcon open={accordionOpen.actions} />
                                         </div>
                                         {accordionOpen.actions && (
@@ -2670,6 +2725,8 @@
                                     sitesWithNeighbors={sitesWithNeighbors}
                                     nNeighbors={nNeighbors}
                                     distanceUnit={distanceUnit}
+                                    popupColumns={popupColumns}
+                                    popupColumnsTarget={popupColumnsTarget}
                                 />
                             </div>
 
