@@ -22,6 +22,13 @@
 
     <!-- Babel Standalone -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+      // Force classic JSX runtime (React.createElement) to avoid automatic runtime
+      // adding "import" statements that fail in non-module scripts.
+      Babel.registerPreset("react-classic", {
+        presets: [[Babel.availablePresets.react, { runtime: "classic" }]]
+      });
+    </script>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -34,9 +41,6 @@
 
     <!-- SheetJS (XLSX) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
         :root {
@@ -981,7 +985,7 @@
 <body>
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react-classic,env">
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
         // --- Custom SVG Icons to avoid Lucide React DOM replacement issues while matching spec ---
