@@ -1910,24 +1910,29 @@
                         neighborLayerMap.set(n.to, n.layer || 1);
                     });
 
-                    // Dim all other markers
+                    // Hide all other markers
                     markersMapRef.current.forEach((marker, id) => {
                         if (id !== selectedSite && !neighborLayerMap.has(id)) {
-                            if (marker.setOpacity) marker.setOpacity(0.2);
+                            if (marker.setOpacity) marker.setOpacity(0);
+                            if (showSiteLabels && marker.unbindTooltip) marker.unbindTooltip();
                         } else {
                             if (marker.setOpacity) marker.setOpacity(1.0);
                             if (marker.setZIndexOffset) marker.setZIndexOffset(1000);
+                            if (showSiteLabels && !marker.getTooltip()) {
+                                const s = sites.find(s2 => s2.id === id);
+                                if (s) marker.bindTooltip(`<b>${s.id}</b>`, { className: 'minimal-tooltip', direction: 'top', permanent: true });
+                            }
                         }
                     });
 
-                    // Dim all connection lines
+                    // Hide all connection lines
                     linesMapRef.current.forEach((data) => {
-                        data.layer.setStyle({ opacity: 0.08 });
+                        data.layer.setStyle({ opacity: 0 });
                     });
 
-                    // Dim existing Voronoi diagram edges (the purple ones)
+                    // Hide existing Voronoi diagram edges (the purple ones)
                     voronoiLinesRef.current.forEach(l => {
-                        if (l.setStyle) l.setStyle({ opacity: 0.1, weight: 1 });
+                        if (l.setStyle) l.setStyle({ opacity: 0, weight: 1 });
                     });
 
                     // Compute Voronoi cell polygons for neighbor sites per layer (skip source cell)
@@ -2017,9 +2022,12 @@
                     selectionRef.current.lines.forEach(l => l.remove());
                     selectionRef.current.markers.forEach(m => m.remove());
                     selectionRef.current = { lines: [], markers: [] };
-                    markersMapRef.current.forEach((marker) => {
+                    markersMapRef.current.forEach((marker, id) => {
                         if (marker.setOpacity) marker.setOpacity(1.0);
                         if (marker.setZIndexOffset) marker.setZIndexOffset(0);
+                        if (showSiteLabels && !marker.getTooltip()) {
+                            marker.bindTooltip(`<b>${id}</b>`, { className: 'minimal-tooltip', direction: 'top', permanent: true });
+                        }
                     });
                     linesMapRef.current.forEach((data) => {
                         data.layer.setStyle({ opacity: lineOpacity / 100, weight: parseInt(lineThickness), color: lineColor });
@@ -2029,7 +2037,7 @@
                         if (l.setStyle) l.setStyle({ opacity: 0.8, weight: 2, color: '#8b5cf6' });
                     });
                 };
-            }, [selectedSite, sites, sitesWithNeighbors, lineOpacity, lineThickness, lineColor, calcMethod, voronoiEdges]);
+            }, [selectedSite, sites, sitesWithNeighbors, lineOpacity, lineThickness, lineColor, calcMethod, voronoiEdges, showSiteLabels]);
 
             // Clear selection when clicking empty map area
             useEffect(() => {
@@ -2106,7 +2114,8 @@
             const [filterSearch, setFilterSearch] = useState('');
             const [filterColumn, setFilterColumn] = useState('');
             const [filterValue, setFilterValue] = useState('');
-            const [matchFilter, setMatchFilter] = useState('All'); 
+            const [matchFilter, setMatchFilter] = useState('All');
+            const [siteTypeFilter, setSiteTypeFilter] = useState('All'); 
             
             // POPUP COLUMNS STATE
             const [popupColumns, setPopupColumns] = useState(new Set());
@@ -2468,9 +2477,35 @@
                     rawSites = rawSites.filter(s => allowedIds.has(s.id));
                     rawConns = rawConns.filter(c => allowedIds.has(c.from) && allowedIds.has(c.to));
                 }
-                
+
                 return { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns };
             }, [calculatedData, filterSearch, filterColumn, filterValue, matchFilter]);
+
+            // Consolidated site type filter: compute sourceIds/neighborIds once
+            const { filteredAllSites, filteredConnections, filteredSitesWithNeighbors } = useMemo(() => {
+                if (siteTypeFilter === 'All' || !sitesWithNeighbors.length) {
+                    return { filteredAllSites: allSites, filteredConnections: connections, filteredSitesWithNeighbors: sitesWithNeighbors };
+                }
+                const sourceIds = new Set(sitesWithNeighbors.map(s => s.id));
+                const neighborIds = new Set();
+                sitesWithNeighbors.forEach(s => s.neighbors?.forEach(n => neighborIds.add(n.to)));
+
+                if (siteTypeFilter === 'Source') {
+                    return {
+                        filteredAllSites: allSites.filter(s => sourceIds.has(s.id)),
+                        filteredConnections: connections.filter(c => sourceIds.has(c.from)),
+                        filteredSitesWithNeighbors: sitesWithNeighbors.filter(s => sourceIds.has(s.id))
+                    };
+                }
+                if (siteTypeFilter === 'Neighbor') {
+                    return {
+                        filteredAllSites: allSites.filter(s => neighborIds.has(s.id)),
+                        filteredConnections: connections.filter(c => neighborIds.has(c.to)),
+                        filteredSitesWithNeighbors: []
+                    };
+                }
+                return { filteredAllSites: allSites, filteredConnections: connections, filteredSitesWithNeighbors: sitesWithNeighbors };
+            }, [allSites, connections, sitesWithNeighbors, siteTypeFilter]);
 
             // Zoom to site when searching by site code
             const prevFilterSearchRef = useRef('');
@@ -2511,14 +2546,14 @@
 
             // Exports
             const getGeoJSON = useCallback(() => {
-                const features = allSites.map(s => ({
+                const features = filteredAllSites.map(s => ({
                     type: 'Feature',
                     geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
                     properties: { id: s.id, ...s.originalData }
                 }));
-                const lineFeatures = connections.map(c => {
-                    const p1 = allSites.find(s => s.id === c.from);
-                    const p2 = allSites.find(s => s.id === c.to);
+                const lineFeatures = filteredConnections.map(c => {
+                    const p1 = filteredAllSites.find(s => s.id === c.from);
+                    const p2 = filteredAllSites.find(s => s.id === c.to);
                     return {
                         type: 'Feature',
                         geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] },
@@ -2526,7 +2561,7 @@
                     }
                 });
                 return { type: 'FeatureCollection', features: [...features, ...lineFeatures] };
-            }, [allSites, connections]);
+            }, [filteredAllSites, filteredConnections]);
 
             const downloadBlob = (blob, filename) => {
                 const url = URL.createObjectURL(blob);
@@ -3283,7 +3318,18 @@
                                                     </select>
                                                 </div>
                                                 {/* END NEW UI */}
-                                                
+
+                                                {/* Site Type Filter UI */}
+                                                <div className="form-group" style={{ marginTop: '14px', marginBottom: 0 }}>
+                                                    <label>Site Type</label>
+                                                    <select className="form-control" value={siteTypeFilter} onChange={e => setSiteTypeFilter(e.target.value)}>
+                                                        <option value="All">All</option>
+                                                        <option value="Source">Source Site</option>
+                                                        <option value="Neighbor">Neighbour Site</option>
+                                                    </select>
+                                                </div>
+                                                {/* END Site Type Filter UI */}
+
                                             </div>
                                         )}
                                     </div>
@@ -3424,8 +3470,8 @@
                             <div style={{ display: activeTab === 'map' ? 'block' : 'none', width: '100%', height: '100%', position: 'relative' }}>
                                 <MapLayerSwitcher mapStyle={mapStyle} onStyleChange={setMapStyle} />
                                 <MapView
-                                    sites={allSites}
-                                    connections={connections}
+                                    sites={filteredAllSites}
+                                    connections={filteredConnections}
                                     hoveredSite={hoveredSite}
                                     selectedSite={selectedSite}
                                     onSiteClick={setSelectedSite}
@@ -3448,7 +3494,7 @@
                                     showSiteLabels={showSiteLabels}
                                     markerSize={markerSize}
                                     singleIconMode={!hasTarget}
-                                    sitesWithNeighbors={sitesWithNeighbors}
+                                    sitesWithNeighbors={filteredSitesWithNeighbors}
                                     nNeighbors={nNeighbors}
                                     distanceUnit={distanceUnit}
                                     popupColumns={popupColumns}
@@ -3463,10 +3509,10 @@
                             {/* DATA TABLE */}
                             {activeTab === 'table' && (
                                 <div className="table-container" ref={tableContainerRef} onScroll={(e) => setTableScrollTop(e.target.scrollTop)}>
-                                    {sitesWithNeighbors.length === 0
+                                    {filteredSitesWithNeighbors.length === 0
                                         ? <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>No data loaded. Upload a file to get started.</div>
                                         : (() => {
-                                            const allRows = sitesWithNeighbors.flatMap(s => (s.neighbors || []).map((n, idx) => ({ ...n, from: s.id, rank: idx + 1 })));
+                                            const allRows = filteredSitesWithNeighbors.flatMap(s => (s.neighbors || []).map((n, idx) => ({ ...n, from: s.id, rank: idx + 1 })));
                                             const totalHeight = allRows.length * TABLE_ROW_HEIGHT;
                                             const startIndex = Math.max(0, Math.floor(tableScrollTop / TABLE_ROW_HEIGHT) - TABLE_BUFFER);
                                             const endIndex = Math.min(allRows.length, Math.ceil((tableScrollTop + (tableContainerRef.current?.clientHeight || 500)) / TABLE_ROW_HEIGHT) + TABLE_BUFFER);
@@ -3498,7 +3544,7 @@
 
                             {/* GEOJSON */}
                             {activeTab === 'geojson' && (
-                                <textarea readOnly value={sitesWithNeighbors.length > 0 ? JSON.stringify(getGeoJSON(), null, 2) : 'No data loaded.'} />
+                                <textarea readOnly value={filteredSitesWithNeighbors.length > 0 ? JSON.stringify(getGeoJSON(), null, 2) : 'No data loaded.'} />
                             )}
                         </div>
 
