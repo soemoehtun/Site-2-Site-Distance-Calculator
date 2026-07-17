@@ -932,6 +932,60 @@
                 gap: 4px;
             }
             .sidebar-tab svg { width: 11px; height: 11px; }
+
+            .icon-modal-card {
+                max-height: 95vh;
+                margin: 0 8px;
+            }
+            .icon-modal-body {
+                padding: 12px;
+            }
+            .icon-modal-body .icon-modal-grid-wrap {
+                height: 240px;
+            }
+            .icon-modal-grid {
+                grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+            }
+            .icon-modal-item img {
+                max-width: 22px;
+                max-height: 22px;
+            }
+            .icon-modal-footer {
+                padding: 10px 12px;
+            }
+            .icon-modal-footer .icon-modal-btn {
+                flex: 1;
+                text-align: center;
+            }
+            .icon-modal-top {
+                flex-direction: column;
+                align-items: center;
+            }
+            .icon-modal-controls {
+                width: 100%;
+            }
+            .icon-modal-row {
+                flex-wrap: wrap;
+            }
+            .icon-modal-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .icon-modal-actions button {
+                width: 100%;
+                justify-content: center;
+            }
+            .icon-modal-actions .icon-modal-svglink {
+                margin-left: 0 !important;
+                justify-content: center;
+                width: 100%;
+            }
+            .icon-modal-custom-inputs {
+                flex-direction: column;
+            }
+            .icon-modal-custom-inputs input:last-child {
+                width: 100% !important;
+            }
         }
 
         /* Custom marker icon styles */
@@ -1041,11 +1095,6 @@
         // Fixed Google Earth icon base URL
         const GE_ICON_BASE = 'https://www.google.com/mapfiles/kml';
         const GE_ICONS = {
-            'Pushpins': [
-                'pushpin/ylw-pushpin.png', 'pushpin/blue-pushpin.png', 'pushpin/grn-pushpin.png',
-                'pushpin/ltblu-pushpin.png', 'pushpin/pink-pushpin.png', 'pushpin/purple-pushpin.png',
-                'pushpin/red-pushpin.png', 'pushpin/wht-pushpin.png'
-            ],
             'Paddles (Blank)': [
                 'paddle/blu-blank.png', 'paddle/grn-blank.png', 'paddle/ltblu-blank.png',
                 'paddle/pink-blank.png', 'paddle/purple-blank.png', 'paddle/red-blank.png',
@@ -1063,31 +1112,25 @@
                 'paddle/pink-stars.png', 'paddle/purple-stars.png', 'paddle/red-stars.png',
                 'paddle/wht-stars.png', 'paddle/ylw-stars.png'
             ],
-            'Shapes': [
-                'shapes/placemark_circle.png', 'shapes/placemark_square.png', 'shapes/star.png',
-                'shapes/triangle.png', 'shapes/diamond.png', 'shapes/polygon.png',
-                'shapes/info.png', 'shapes/camera.png', 'shapes/bus.png', 'shapes/caution.png',
-                'shapes/dining.png', 'shapes/mountains.png', 'shapes/parking_lot.png',
-                'shapes/webcam.png', 'shapes/target.png', 'shapes/trail.png', 'shapes/ranger_station.png'
+            'Pushpins': [
+                'pushpin/ylw-pushpin.png', 'pushpin/blue-pushpin.png', 'pushpin/grn-pushpin.png',
+                'pushpin/ltblu-pushpin.png', 'pushpin/pink-pushpin.png', 'pushpin/purple-pushpin.png',
+                'pushpin/red-pushpin.png', 'pushpin/wht-pushpin.png'
             ],
-            'Letters': [...Array(26)].map((_, i) => `paddle/${String.fromCharCode(65 + i)}.png`),
-            'Numbers': [...Array(10)].map((_, i) => `paddle/${i + 1}.png`),
-            'Palette 2': [...Array(64)].map((_, i) => `pal2/icon${i}.png`),
-            'Palette 3': [...Array(64)].map((_, i) => `pal3/icon${i}.png`),
-            'Palette 4': [...Array(64)].map((_, i) => `pal4/icon${i}.png`),
-            'Palette 5': [...Array(64)].map((_, i) => `pal5/icon${i}.png`)
+
         };
 
         // Helper function to get full URL
         const getIconUrl = (url) => {
             if (!url || url === 'VECTOR_CIRCLE') return null;
             if (url.startsWith('http')) return url;
+            if (url.startsWith('data:')) return url;
             return GE_ICON_BASE + '/' + url;
         };
 
-        const createCustomIcon = (iconUrl, color, size, opacity) => {
-            const s = Math.round(size);
-            const op = Math.min(Math.max(opacity / 100, 0), 1);
+        const createCustomIcon = (iconUrl, color, scale, opacity) => {
+            const s = Math.max(8, Math.round(24 * (scale || 1.0)));
+            const op = Math.min(Math.max((opacity !== undefined ? opacity : 100) / 100, 0), 1);
 
             if (!iconUrl || iconUrl === 'VECTOR_CIRCLE') {
                 return L.divIcon({
@@ -1399,19 +1442,34 @@
             osm: 'Osm'
         };
 
-        const ModernIconPicker = ({ isOpen, onClose, currentIcon, onSelect, sourceIcon }) => {
+        const ModernIconPicker = ({ isOpen, onClose, currentIcon, onSelect }) => {
             const [search, setSearch] = useState('');
             const [selectedIcon, setSelectedIcon] = useState(currentIcon?.url || '');
-            const [selectedColor, setSelectedColor] = useState('#1a1a1a');
-            const [selectedSize, setSelectedSize] = useState(24);
-            const [selectedOpacity, setSelectedOpacity] = useState(1.0);
+            const [selectedColor, setSelectedColor] = useState(currentIcon?.color || '#ffffff');
+            const [selectedScale, setSelectedScale] = useState(currentIcon?.scale || 1.0);
+            const [selectedOpacity, setSelectedOpacity] = useState(currentIcon?.opacity || 1.0);
+            const [activeCategory, setActiveCategory] = useState('Paddles (Blank)');
+            const [customIcons, setCustomIcons] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('customIcons') || '[]'); } catch(e) { return []; }
+            });
+            const [showCustomImport, setShowCustomImport] = useState(false);
+            const [customUrl, setCustomUrl] = useState('');
+            const [customName, setCustomName] = useState('');
+            const fileInputRef = useRef(null);
+
+            const categories = Object.keys(GE_ICONS);
+            const allCategories = customIcons.length > 0 ? [...categories, 'Custom Icons'] : categories;
 
             useEffect(() => {
                 if (isOpen) {
                     setSelectedIcon(currentIcon?.url || '');
-                    setSelectedColor(currentIcon?.color || '#1a1a1a');
-                    setSelectedSize(currentIcon?.size || 24);
+                    setSelectedColor(currentIcon?.color || '#ffffff');
+                    setSelectedScale(currentIcon?.scale || 1.0);
                     setSelectedOpacity(currentIcon?.opacity || 1.0);
+                    setSearch('');
+                    setShowCustomImport(false);
+                    setCustomUrl('');
+                    setCustomName('');
                 }
             }, [isOpen, currentIcon]);
 
@@ -1422,115 +1480,141 @@
                 ? selectedIcon.split('/').pop().replace(/\.png|\.gif|\.svg|\.jpg|\.jpeg/gi, '').toUpperCase()
                 : 'CIRCLE';
 
-            const allIcons = Object.entries(GE_ICONS).flatMap(([category, icons]) =>
-                icons.map((url) => ({ url, category, fullName: category + '/' + url }))
-            );
+            const getPresetColor = (url) => {
+                if (!url || url === 'VECTOR_CIRCLE') return '#ffffff';
+                const u = url.toLowerCase();
+                if (u.includes('grn') || u.includes('green')) return '#00ff00';
+                if (u.includes('red')) return '#ff0000';
+                if (u.includes('blue') && !u.includes('ltblu')) return '#0000ff';
+                if (u.includes('ltblu') || u.includes('lightblue')) return '#00ffff';
+                if (u.includes('pink')) return '#ff00ff';
+                if (u.includes('purple') || u.includes('purp')) return '#800080';
+                if (u.includes('ylw') || u.includes('yellow')) return '#ffff00';
+                if (u.includes('orange')) return '#ffa500';
+                if (u.includes('wht') || u.includes('white')) return '#ffffff';
+                if (u.includes('blk') || u.includes('black')) return '#000000';
+                return '#ffffff';
+            };
 
+            const handleAddCustomIcon = () => {
+                if (!customUrl) return;
+                const newIcon = { url: customUrl, name: customName || 'Custom Icon', id: 'custom_' + Date.now() };
+                const updated = [...customIcons, newIcon];
+                setCustomIcons(updated);
+                localStorage.setItem('customIcons', JSON.stringify(updated));
+                setCustomUrl('');
+                setCustomName('');
+                setShowCustomImport(false);
+            };
+
+            const handleDeleteCustomIcon = (e, iconId) => {
+                e.stopPropagation();
+                const updated = customIcons.filter(ic => ic.id !== iconId);
+                setCustomIcons(updated);
+                localStorage.setItem('customIcons', JSON.stringify(updated));
+                if (selectedIcon.startsWith('custom_')) setSelectedIcon('');
+            };
+
+            const handleFileImport = (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const dataUrl = evt.target.result;
+                    const newIcon = { url: dataUrl, name: file.name, id: 'custom_' + Date.now() };
+                    const updated = [...customIcons, newIcon];
+                    setCustomIcons(updated);
+                    localStorage.setItem('customIcons', JSON.stringify(updated));
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const getIconsForCategory = (cat) => {
+                if (cat === 'Custom Icons') return customIcons.map(ic => ({ url: ic.url, category: 'Custom Icons', fullName: ic.name, isCustom: true, customId: ic.id }));
+                return (GE_ICONS[cat] || []).map(url => ({ url, category: cat, fullName: cat + ' / ' + url }));
+            };
+
+            const currentIcons = getIconsForCategory(activeCategory);
             const filteredIcons = search
-                ? allIcons.filter(ic => ic.fullName.toLowerCase().includes(search.toLowerCase()) || ic.category.toLowerCase().includes(search.toLowerCase()))
-                : allIcons;
+                ? allCategories.flatMap(cat => getIconsForCategory(cat)).filter(ic => 
+                    ic.fullName.toLowerCase().includes(search.toLowerCase()) || 
+                    ic.category.toLowerCase().includes(search.toLowerCase()))
+                : currentIcons;
 
             return (
                 <div className="icon-modal-overlay" onClick={onClose}>
                     <div className="icon-modal-card" onClick={e => e.stopPropagation()}>
-                        {/* Header */}
                         <div className="icon-modal-header">
-                            <h3>Icon</h3>
+                            <h3>Icon &amp; Style Settings</h3>
                             <button className="icon-modal-close" onClick={onClose}>&times;</button>
                         </div>
-
-                        {/* Body */}
                         <div className="icon-modal-body">
-                            {/* Top Section: Preview & Controls */}
-                            <div className="icon-modal-top">
-                                {/* Preview Box */}
-                                <div className="icon-modal-preview">
-                                    {selectedIcon === 'VECTOR_CIRCLE' || !selectedIcon ? (
-                                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: selectedColor }}></div>
-                                    ) : previewUrl ? (
-                                        <img src={previewUrl} alt="preview" onError={(e) => { e.target.style.opacity = '0.2'; }} />
-                                    ) : (
-                                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: selectedColor }}></div>
-                                    )}
-                                </div>
+                            
 
-                                {/* Controls Column */}
-                                <div className="icon-modal-controls">
-                                    <div className="icon-modal-row">
-                                        <span className="icon-modal-label">Size:</span>
-                                        <input 
-                                            type="number" 
-                                            value={selectedSize} 
-                                            min={8} max={72} step={2} 
-                                            onChange={e => setSelectedSize(parseInt(e.target.value) || 24)} 
-                                            className="icon-modal-input" 
-                                        />
-                                        <span className="icon-modal-label" style={{marginLeft: '4px'}}>Opacity:</span>
-                                        <select 
-                                            value={selectedOpacity * 100} 
-                                            onChange={e => setSelectedOpacity(parseInt(e.target.value) / 100)} 
-                                            className="icon-modal-select"
-                                        >
-                                            <option value={100}>100%</option>
-                                            <option value={75}>75%</option>
-                                            <option value={50}>50%</option>
-                                            <option value={25}>25%</option>
-                                        </select>
+                            {!search && (
+                                <div style={{ display: 'flex', gap: 4, marginBottom: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                                    {allCategories.map(cat => (
+                                        <button key={cat} onClick={() => setActiveCategory(cat)} style={{
+                                            padding: '4px 10px', borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 600,
+                                            cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+                                            background: activeCategory === cat ? '#0f172a' : '#f1f5f9',
+                                            color: activeCategory === cat ? '#fff' : '#64748b'
+                                        }}>{cat}</button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {showCustomImport && (
+                                <div className="icon-modal-custom-form" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10, marginBottom: 10 }}>
+                                    <div className="icon-modal-custom-inputs" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        <input type="text" placeholder="Icon URL (http://...)" value={customUrl} onChange={e => setCustomUrl(e.target.value)} style={{ flex: 1, border: '1px solid #cbd5e1', borderRadius: 4, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                                        <input type="text" placeholder="Name (optional)" value={customName} onChange={e => setCustomName(e.target.value)} style={{ width: 120, border: '1px solid #cbd5e1', borderRadius: 4, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
                                     </div>
-                                    <input 
-                                        value={internalName} 
-                                        readOnly 
-                                        className="icon-modal-name-input"
-                                    />
+                                    <button onClick={handleAddCustomIcon} disabled={!customUrl} style={{
+                                        padding: '5px 12px', borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 600,
+                                        cursor: customUrl ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                                        background: customUrl ? '#2563eb' : '#e2e8f0', color: customUrl ? '#fff' : '#94a3b8'
+                                    }}>Add Icon</button>
                                 </div>
-                            </div>
-
-                            {/* Bottom Section: Icon Grid */}
+                            )}
                             <div className="icon-modal-grid-wrap">
                                 <div className="icon-modal-grid">
                                     {filteredIcons.map((ic, idx) => {
-                                        const iconUrl = getIconUrl(ic.url);
+                                        const iconUrl = ic.isCustom ? ic.url : getIconUrl(ic.url);
                                         const isActive = selectedIcon === ic.url;
-                                        const getPresetColor = (url) => {
-                                            const u = url.toLowerCase();
-                                            if (u.includes('grn')) return '#10b981';
-                                            if (u.includes('red')) return '#ef4444';
-                                            if (u.includes('blue')) return '#3b82f6';
-                                            if (u.includes('ltblu')) return '#06b6d4';
-                                            if (u.includes('pink')) return '#ec4899';
-                                            if (u.includes('purple') || u.includes('purp')) return '#8b5cf6';
-                                            if (u.includes('ylw') || u.includes('yellow')) return '#f59e0b';
-                                            if (u.includes('orange')) return '#f97316';
-                                            if (u.includes('wht')) return '#94a3b8';
-                                            if (u.includes('blk')) return '#1a1a1a';
-                                            return '#10b981';
-                                        };
                                         return (
                                             <div
-                                                key={ic.fullName + idx}
+                                                key={(ic.customId || ic.fullName) + idx}
                                                 className={`icon-modal-item ${isActive ? 'selected' : ''}`}
-                                                onClick={() => { setSelectedIcon(ic.url); setSelectedColor(getPresetColor(ic.url)); }}
+                                                onClick={() => { setSelectedIcon(ic.url); if (!ic.isCustom) setSelectedColor(getPresetColor(ic.url)); }}
                                                 title={ic.fullName}
+                                                style={{ position: 'relative' }}
                                             >
-                                                <img src={iconUrl} alt={ic.url} onError={e => { e.target.style.display = 'none'; }} />
+                                                <img src={iconUrl} alt={ic.url} style={{ maxWidth: 28, maxHeight: 28, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                                                <div style={{ display: 'none', width: 20, height: 20, borderRadius: '50%', background: '#cbd5e1', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: '#fff' }}>?</div>
+                                                {ic.isCustom && (
+                                                    <button onClick={(e) => handleDeleteCustomIcon(e, ic.customId)} style={{
+                                                        position: 'absolute', top: -2, right: -2, width: 14, height: 14, borderRadius: '50%',
+                                                        background: '#ef4444', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+                                                    }}>&times;</button>
+                                                )}
                                             </div>
                                         );
                                     })}
                                 </div>
                             </div>
                         </div>
-
-                        {/* Footer */}
                         <div className="icon-modal-footer">
                             <button className="icon-modal-btn icon-modal-btn-cancel" onClick={onClose}>Cancel</button>
-                            <button className="icon-modal-btn icon-modal-btn-ok" onClick={() => { onSelect({ url: selectedIcon, color: selectedColor, size: selectedSize, opacity: selectedOpacity }); onClose(); }}>OK</button>
+                            <button className="icon-modal-btn icon-modal-btn-ok" onClick={() => { onSelect({ url: selectedIcon, color: selectedColor, scale: selectedScale, opacity: selectedOpacity }); onClose(); }}>OK</button>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        const MapLayerSwitcher = ({ mapStyle, onStyleChange }) => {
+const MapLayerSwitcher = ({ mapStyle, onStyleChange }) => {
             const [expanded, setExpanded] = useState(false);
             const wrapperRef = useRef(null);
 
@@ -1574,7 +1658,7 @@
             );
         };
 
-        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconSize, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget, showVoronoi, voronoiEdges, calcMethod, voronoiLayers }) => {
+        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconScale, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconScale, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget, showVoronoi, voronoiEdges, calcMethod, voronoiLayers }) => {
             const mapRef = useRef(null);
             const mapInst = useRef(null);
             const tileLayerRef = useRef(null);
@@ -1679,17 +1763,17 @@
                     let colorUse = iconColor;
                     let iconUrlUse = markerIconUrl;
                     let opacityUse = iconOpacity;
-                    let baseSize = iconSize;
+                    let baseScale = iconScale;
 
                     if (!singleIconMode && s.isTarget && !s.isSource) {
                         iconUrlUse = neighborMarkerIconUrl;
                         colorUse = neighborIconColor;
                         opacityUse = neighborIconOpacity;
-                        baseSize = neighborIconSize;
+                        baseScale = neighborIconScale;
                     }
 
-                    const scaledSize = Math.round(baseSize * (markerSize || 1));
-                    const markerIcon = createCustomIcon(iconUrlUse, colorUse, scaledSize, opacityUse);
+                    const finalScale = baseScale * (markerSize || 1);
+                    const markerIcon = createCustomIcon(iconUrlUse, colorUse, finalScale, opacityUse);
                     const marker = L.marker([s.lat, s.lng], { icon: markerIcon });
 
                     // Build user-defined custom popup fields first
@@ -1805,7 +1889,7 @@
 
                 cluster.addLayers(newMarkers);
 
-            }, [sites, connections, mapStyle, iconSize, iconColor, lineThickness, lineColor, lineOpacity, markerIconUrl, iconOpacity, showSiteLabels, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, targetPointColor, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget]);
+            }, [sites, connections, mapStyle, iconScale, iconColor, lineThickness, lineColor, lineOpacity, markerIconUrl, iconOpacity, showSiteLabels, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconScale, targetPointColor, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget]);
 
             // 3. Hover Handling (Instant style updates, NO active filtering on click)
             useEffect(() => {
@@ -2126,8 +2210,8 @@
             const [popupColumnsTarget, setPopupColumnsTarget] = useState(new Set());
 
             // Icon State - ensure default values are properly set
-            const [sourceIcon, setSourceIcon] = useState({ url: 'paddle/grn-blank.png', color: '#10b981', size: 24, opacity: 1.0 });
-            const [neighborIcon, setNeighborIcon] = useState({ url: 'paddle/red-blank.png', color: '#ef4444', size: 24, opacity: 1.0 });
+            const [sourceIcon, setSourceIcon] = useState({ url: 'paddle/grn-blank.png', color: '#ffffff', scale: 1.0, opacity: 1.0 });
+            const [neighborIcon, setNeighborIcon] = useState({ url: 'paddle/red-blank.png', color: '#ffffff', scale: 1.0, opacity: 1.0 });
             const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
             // Which entity's icon we are editing with the picker: 'source' or 'neighbor'
             const [pickerActiveTarget, setPickerActiveTarget] = useState('source');
@@ -2209,8 +2293,51 @@
                 }
             };
 
-            const calculateAndDraw = useCallback(() => {
-                if (!sourceMapping.id || !sourceMapping.lat || !sourceMapping.lng || sourceData.length === 0) {
+            
+            // Refs to always access latest state (prevents stale closure issues)
+            const sourceDataRef = useRef(sourceData);
+            const sourceMappingRef = useRef(sourceMapping);
+            const targetDataRef = useRef(targetData);
+            const targetMappingRef = useRef(targetMapping);
+            const calcModeRef = useRef(calcMode);
+            const nNeighborsRef = useRef(nNeighbors);
+            const maxDistanceRef = useRef(maxDistance);
+            const distanceOpRef = useRef(distanceOp);
+            const distanceUnitRef = useRef(distanceUnit);
+            const excludeZeroRef = useRef(excludeZero);
+            const calcMethodRef = useRef(calcMethod);
+            const voronoiLayersRef = useRef(voronoiLayers);
+
+            useEffect(() => { sourceDataRef.current = sourceData; }, [sourceData]);
+            useEffect(() => { sourceMappingRef.current = sourceMapping; }, [sourceMapping]);
+            useEffect(() => { targetDataRef.current = targetData; }, [targetData]);
+            useEffect(() => { targetMappingRef.current = targetMapping; }, [targetMapping]);
+            useEffect(() => { calcModeRef.current = calcMode; }, [calcMode]);
+            useEffect(() => { nNeighborsRef.current = nNeighbors; }, [nNeighbors]);
+            useEffect(() => { maxDistanceRef.current = maxDistance; }, [maxDistance]);
+            useEffect(() => { distanceOpRef.current = distanceOp; }, [distanceOp]);
+            useEffect(() => { distanceUnitRef.current = distanceUnit; }, [distanceUnit]);
+            useEffect(() => { excludeZeroRef.current = excludeZero; }, [excludeZero]);
+            useEffect(() => { calcMethodRef.current = calcMethod; }, [calcMethod]);
+            useEffect(() => { voronoiLayersRef.current = voronoiLayers; }, [voronoiLayers]);
+            useEffect(() => { setShowVoronoi(calcMethod === 'voronoi'); }, [calcMethod]);
+
+const calculateAndDraw = useCallback(() => {
+                // Always read latest values from refs to avoid stale closures
+                const srcData = sourceDataRef.current;
+                const srcMap = sourceMappingRef.current;
+                const tgtData = targetDataRef.current;
+                const tgtMap = targetMappingRef.current;
+                const mode = calcModeRef.current;
+                const nNbr = nNeighborsRef.current;
+                const maxDist = maxDistanceRef.current;
+                const distOp = distanceOpRef.current;
+                const distUnit = distanceUnitRef.current;
+                const exclZero = excludeZeroRef.current;
+                const method = calcMethodRef.current;
+                const vLayers = voronoiLayersRef.current;
+
+                if (!srcMap.id || !srcMap.lat || !srcMap.lng || srcData.length === 0) {
                     setCalculatedData({ sitesWithNeighbors: [], allSites: [], connections: [] });
                     return;
                 }
@@ -2219,18 +2346,18 @@
                 setShowProgress(true);
                 setProgress(0);
 
-                const parsedSource = sourceData.map(row => ({
-                    id: String(row[sourceMapping.id] || ''),
-                    lat: parseFloat(row[sourceMapping.lat]),
-                    lng: parseFloat(row[sourceMapping.lng]),
+                const parsedSource = srcData.map(row => ({
+                    id: String(row[srcMap.id] || ''),
+                    lat: parseFloat(row[srcMap.lat]),
+                    lng: parseFloat(row[srcMap.lng]),
                     originalData: row
                 })).filter(s => s.id && !isNaN(s.lat) && !isNaN(s.lng));
 
-                const hasTarget = calcMode === 'pairwise' && targetData.length > 0 && targetMapping.id && targetMapping.lat && targetMapping.lng;
-                const parsedTarget = hasTarget ? targetData.map(row => ({
-                    id: String(row[targetMapping.id] || ''),
-                    lat: parseFloat(row[targetMapping.lat]),
-                    lng: parseFloat(row[targetMapping.lng]),
+                const hasTarget = mode === 'pairwise' && tgtData.length > 0 && tgtMap.id && tgtMap.lat && tgtMap.lng;
+                const parsedTarget = hasTarget ? tgtData.map(row => ({
+                    id: String(row[tgtMap.id] || ''),
+                    lat: parseFloat(row[tgtMap.lat]),
+                    lng: parseFloat(row[tgtMap.lng]),
                     originalData: row
                 })).filter(s => s.id && !isNaN(s.lat) && !isNaN(s.lng)) : parsedSource;
 
@@ -2246,13 +2373,13 @@
                 }
                 const unifiedAllSites = Array.from(allSitesMap.values());
 
-                if (parsedSource.length === 0 || parsedTarget.length === 0 || nNeighbors < 1) {
+                if (parsedSource.length === 0 || parsedTarget.length === 0 || nNbr < 1) {
                     setCalculatedData({ sitesWithNeighbors: parsedSource, allSites: unifiedAllSites, connections: [] });
                     setShowProgress(false);
                     return;
                 }
 
-                const multiplier = distanceUnit === 'm' ? 1000 : (distanceUnit === 'ft' ? 3280.84 : (distanceUnit === 'mi' ? 0.621371 : 1));
+                const multiplier = distUnit === 'm' ? 1000 : (distUnit === 'ft' ? 3280.84 : (distUnit === 'mi' ? 0.621371 : 1));
 
                 // --- ASYNC CHUNKING LOGIC ---
                 const newSites = [];
@@ -2264,7 +2391,7 @@
                 // Pre-compute Voronoi triangulation on ALL combined sites (source + target)
                 let voronoiAllPts = null;
                 let voronoiTriangles = null;
-                if (calcMethod === 'voronoi') {
+                if (method === 'voronoi') {
                     const combinedMap = new Map();
                     parsedSource.forEach(s => combinedMap.set(s.id, s));
                     parsedTarget.forEach(s => {
@@ -2280,16 +2407,16 @@
 
                     for (let i = currentIndex; i < end; i++) {
                         const s1 = parsedSource[i];
-                        
+
                         let neighbors;
 
-                        if (calcMethod === 'voronoi' && voronoiAllPts && voronoiTriangles) {
+                        if (method === 'voronoi' && voronoiAllPts && voronoiTriangles) {
                             // Find the source's index in the combined Voronoi point set
                             const srcIdx = voronoiAllPts.findIndex(s => s.id === s1.id);
                             if (srcIdx >= 0) {
                                 // Get N-ring Voronoi neighbors with layer info
-                                let layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, srcIdx, voronoiLayers);
-                                
+                                let layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, srcIdx, vLayers);
+
                                 // If source has no Delaunay neighbors (degenerate: duplicate coords
                                 // with another site), fall back to nearest other site's neighbors
                                 if (layerMap.size === 0) {
@@ -2302,10 +2429,10 @@
                                         }
                                     });
                                     if (fallbackIdx >= 0) {
-                                        layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, fallbackIdx, voronoiLayers);
+                                        layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, fallbackIdx, vLayers);
                                     }
                                 }
-                                
+
                                 const results = [];
                                 layerMap.forEach((layer, idx) => {
                                     if (idx !== srcIdx) {
@@ -2335,23 +2462,23 @@
 
                             // Checkbox strictly checks for IDENTICAL physical sites
                             // 1e-6 safely handles any minute float rounding errors ensuring 0 is captured
-                            if (excludeZero) {
+                            if (exclZero) {
                                 distances = distances.filter(d => d.dist > 1e-6);
                             }
 
-                            if (maxDistance !== null && !isNaN(maxDistance)) {
-                                const op = distanceOp;
+                            if (maxDist !== null && !isNaN(maxDist)) {
+                                const op = distOp;
                                 distances = distances.filter(d => {
-                                    if (op === '<') return d.dist < maxDistance;
-                                    if (op === '<=') return d.dist <= maxDistance;
-                                    if (op === '>') return d.dist > maxDistance;
-                                    if (op === '>=') return d.dist >= maxDistance;
-                                    if (op === '=') return d.dist === maxDistance;
+                                    if (op === '<') return d.dist < maxDist;
+                                    if (op === '<=') return d.dist <= maxDist;
+                                    if (op === '>') return d.dist > maxDist;
+                                    if (op === '>=') return d.dist >= maxDist;
+                                    if (op === '=') return d.dist === maxDist;
                                     return true;
                                 });
                             }
                             distances.sort((a, b) => a.dist - b.dist);
-                            neighbors = distances.slice(0, nNeighbors);
+                            neighbors = distances.slice(0, nNbr);
                         }
 
                         newSites.push({ ...s1, neighbors });
@@ -2373,7 +2500,7 @@
 
                 const finalizeCalculations = (processedSites, allUnified) => {
                     setProgress(95); // Almost done
-                    
+
                     const conns = [];
                     const added = new Set();
                     processedSites.forEach(s => {
@@ -2390,7 +2517,7 @@
                     processedSites.forEach(s => {
                         s.neighbors?.forEach(n => neighborIds.add(n.to));
                     });
-                    
+
                     allUnified.forEach(s => {
                         if (neighborIds.has(s.id)) {
                             s.isNeighbor = true;
@@ -2415,7 +2542,7 @@
                 // Kick off the first chunk
                 setTimeout(processChunk, 0);
 
-            }, [sourceData, sourceMapping, targetData, targetMapping, nNeighbors, calcMode, maxDistance, distanceOp, distanceUnit, excludeZero, calcMethod, voronoiLayers]);
+            }, []); // No dependencies — always uses latest refs
 
             const { sitesWithNeighbors, allSites, connections } = useMemo(() => {
                 let { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns } = calculatedData;
@@ -2587,30 +2714,35 @@
             const exportKML = () => {
                 const exportConns = connections;
 
-                // Helper: convert hex #RRGGBB to KML aaBBGGRR
+                // Helper: convert hex #RRGGBB to KML aaBBGGRR (alpha-blue-green-red)
                 const hexToKml = (hex, alpha) => {
-                    const r = hex.slice(1, 3);
-                    const g = hex.slice(3, 5);
-                    const b = hex.slice(5, 7);
-                    const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
+                    const clean = hex.replace('#', '');
+                    const r = clean.slice(0, 2);
+                    const g = clean.slice(2, 4);
+                    const b = clean.slice(4, 6);
+                    const a = Math.round((alpha !== undefined ? alpha : 1) * 255).toString(16).padStart(2, '0');
                     return (a + b + g + r).toLowerCase();
                 };
 
-                // Get icon URL for KML
+                // Get icon URL for KML - use exact Google Earth paths
                 const getKmlIconHref = (iconUrl) => {
                     if (!iconUrl || iconUrl === 'VECTOR_CIRCLE') {
-                        return 'http://www.google.com/mapfiles/kml/paddle/wht-blank.png';
+                        return 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png';
                     }
                     if (iconUrl.startsWith('http')) return iconUrl;
-                    return GE_ICON_BASE + '/' + iconUrl;
+                    if (iconUrl.startsWith('data:')) return 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png';
+                    return 'http://maps.google.com/mapfiles/kml/' + iconUrl;
                 };
 
-                const sourceIconHref = getKmlIconHref(sourceIcon.url);
-                const neighborIconHref = getKmlIconHref(neighborIcon.url);
-                const sourceIconColor = hexToKml(sourceIcon.color, sourceIcon.opacity);
-                const neighborIconColor = hexToKml(neighborIcon.color, neighborIcon.opacity);
-                const sourceIconScale = Math.max(0.4, Math.min(sourceIcon.size / 24, 2.5));
-                const neighborIconScale = Math.max(0.4, Math.min(neighborIcon.size / 24, 2.5));
+                const srcIcon = sourceIcon || { url: 'paddle/grn-blank.png', color: '#ffffff', scale: 1.0, opacity: 1.0 };
+                const nbrIcon = neighborIcon || { url: 'paddle/red-blank.png', color: '#ffffff', scale: 1.0, opacity: 1.0 };
+
+                const srcIconHref = getKmlIconHref(srcIcon.url);
+                const nbrIconHref = getKmlIconHref(nbrIcon.url);
+                const srcIconColor = hexToKml(srcIcon.color, srcIcon.opacity);
+                const nbrIconColor = hexToKml(nbrIcon.color, nbrIcon.opacity);
+                const srcIconScale = Math.max(0.1, Math.min(srcIcon.scale || 1.0, 4.0));
+                const nbrIconScale = Math.max(0.1, Math.min(nbrIcon.scale || 1.0, 4.0));
                 const kmlLineColor = hexToKml(lineColor, lineOpacity / 100);
                 const kmlLineWidth = parseInt(lineThickness);
 
@@ -2618,15 +2750,19 @@
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>Site To Site Distance Calculator Export</name>
+  <open>1</open>
   <Style id="sourceStyle">
     <IconStyle>
-      <scale>${sourceIconScale}</scale>
+      <color>${srcIconColor}</color>
+      <scale>${srcIconScale}</scale>
       <Icon>
-        <href>${sourceIconHref}</href>
+        <href>${srcIconHref}</href>
       </Icon>
+      <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
     </IconStyle>
     <LabelStyle>
-      <scale>0.7</scale>
+      <color>ffffffff</color>
+      <scale>0.8</scale>
     </LabelStyle>
     <BalloonStyle>
       <text><![CDATA[$[description]]]></text>
@@ -2634,13 +2770,16 @@
   </Style>
   <Style id="neighborStyle">
     <IconStyle>
-      <scale>${neighborIconScale}</scale>
+      <color>${nbrIconColor}</color>
+      <scale>${nbrIconScale}</scale>
       <Icon>
-        <href>${neighborIconHref}</href>
+        <href>${nbrIconHref}</href>
       </Icon>
+      <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
     </IconStyle>
     <LabelStyle>
-      <scale>0.7</scale>
+      <color>ffffffff</color>
+      <scale>0.8</scale>
     </LabelStyle>
     <BalloonStyle>
       <text><![CDATA[$[description]]]></text>
@@ -2657,14 +2796,13 @@
   </Style>
   <Folder>
     <name>Sites</name>
+    <open>1</open>
 `;
 
-                // Lookup map to get detailed neighbor data
                 const neighborDataMap = new Map();
                 sitesWithNeighbors.forEach(s => neighborDataMap.set(s.id, s));
 
                 allSites.forEach(s => {
-                    // Custom KML Info Box Injection
                     let extraInfoHtml = '';
                     if (s.originalData) {
                          const colsToUse = (hasTarget && s.isTarget && !s.isSource) ? popupColumnsTarget : popupColumns;
@@ -2751,6 +2889,7 @@
                 kml += `  </Folder>
   <Folder>
     <name>Connections</name>
+    <open>1</open>
 `;
 
                 exportConns.forEach(c => {
@@ -2760,7 +2899,7 @@
 
                     const arrow = !hasTarget ? ' ⇄ ' : ' → ';
                     kml += `    <Placemark>
-      <name style="font-size:10px">${c.from}${arrow}${c.to} | ${c.distance.toFixed(3)} ${distanceUnit}</name>
+      <name>${c.from}${arrow}${c.to} | ${c.distance.toFixed(3)} ${distanceUnit}</name>
       <styleUrl>#lineStyle</styleUrl>
       <LineString>
         <coordinates>${p1.lng},${p1.lat},0 ${p2.lng},${p2.lat},0</coordinates>
@@ -2772,67 +2911,6 @@
                 kml += `  </Folder>
 `;
 
-                // Voronoi Cell Polygons Folder (for each source site's neighbor cells)
-                if (calcMethod === 'voronoi') {
-                    const allPts = allSites.map(s => ({ x: s.lng, y: s.lat }));
-                    const allSiteIdxMap = new Map(allSites.map((s, i) => [s.id, i]));
-                    const triangles = computeDelaunay(allPts);
-
-                    let hasPolygons = false;
-                    let polygonFolder = `  <Folder>
-    <name>Voronoi Cell Polygons</name>
-`;
-
-                    // Generate a unique style per layer
-                    const layerStyleMap = new Map();
-                    LAYER_COLORS.forEach((color, idx) => {
-                        const kmlColor = hexToKml(color, 0.3);
-                        const kmlLineColor = hexToKml(color, 0.7);
-                        const styleId = `voronoiCellStyle${idx}`;
-                        layerStyleMap.set(idx, styleId);
-                        polygonFolder += `  <Style id="${styleId}">
-    <LineStyle><color>${kmlLineColor}</color><width>2</width></LineStyle>
-    <PolyStyle><color>${kmlColor}</color></PolyStyle>
-  </Style>
-`;
-                    });
-
-                    sitesWithNeighbors.forEach(siteData => {
-                        siteData.neighbors?.forEach(n => {
-                            const idx = allSiteIdxMap.get(n.to);
-                            if (idx === undefined) return;
-                            const polygon = computeVoronoiCellPolygon(triangles, allPts, idx);
-                            if (polygon.length < 3) return;
-
-                            const layerNum = n.layer || 1;
-                            const layerIdx = (layerNum - 1) % LAYER_COLORS.length;
-                            const styleId = layerStyleMap.get(layerIdx) || 'voronoiCellStyle0';
-                            const coords = polygon.map(p => `${p.lng},${p.lat},0`).join(' ');
-
-                            polygonFolder += `    <Placemark>
-      <name>${siteData.id} → ${n.to} (L${layerNum})</name>
-      <styleUrl>#${styleId}</styleUrl>
-      <Polygon>
-        <outerBoundaryIs>
-          <LinearRing>
-            <coordinates>${coords}</coordinates>
-          </LinearRing>
-        </outerBoundaryIs>
-      </Polygon>
-    </Placemark>
-`;
-                            hasPolygons = true;
-                        });
-                    });
-
-                    if (hasPolygons) {
-                        polygonFolder += `  </Folder>
-`;
-                        kml += polygonFolder;
-                    }
-                }
-
-                // Voronoi Edge Lines Folder (matches map's purple voronoi overlay)
                 if (showVoronoi && voronoiEdges.length > 0) {
                     const kmlVoronoiEdgeColor = hexToKml('#8b5cf6', 0.8);
                     kml += `  <Style id="voronoiEdgeStyle">
@@ -2840,6 +2918,7 @@
   </Style>
   <Folder>
     <name>Voronoi Edges</name>
+    <open>1</open>
 `;
                     voronoiEdges.forEach(edge => {
                         kml += `    <Placemark>
@@ -2860,7 +2939,7 @@
                 downloadBlob(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), 'distances.kml');
             };
 
-            const exportExcel = () => {
+const exportExcel = () => {
                 const wb = XLSX.utils.book_new();
 
                 // Detailed Distances (Directed: Source -> Neighbor with Rank)
@@ -3493,11 +3572,11 @@
                                     markerIconUrl={sourceIcon.url}
                                     iconColor={sourceIcon.color}
                                     iconOpacity={sourceIcon.opacity * 100}
-                                    iconSize={sourceIcon.size}
+                                    iconScale={sourceIcon.scale}
                                     neighborMarkerIconUrl={neighborIcon.url}
                                     neighborIconColor={neighborIcon.color}
                                     neighborIconOpacity={neighborIcon.opacity * 100}
-                                    neighborIconSize={neighborIcon.size}
+                                    neighborIconScale={neighborIcon.scale}
                                     showSiteLabels={showSiteLabels}
                                     markerSize={markerSize}
                                     singleIconMode={!hasTarget}
