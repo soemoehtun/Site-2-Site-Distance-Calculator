@@ -1007,6 +1007,8 @@
     <div id="root"></div>
 
     <script type="text/babel" data-presets="react-classic,env">
+        window.addEventListener('error', e => console.error('[GLOBAL]', e.error || e));
+
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
         // --- Custom SVG Icons to avoid Lucide React DOM replacement issues while matching spec ---
@@ -1716,7 +1718,7 @@
                                 ? `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${layerColor}; margin-right: 4px; vertical-align: middle;"></span><span style="font-size: 10px; color: ${layerColor}; font-weight: 600;">L${layerNum}</span>`
                                 : '';
                             return `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
-                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
+                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
                             </div>`;
                         }).join('') || `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
                         
@@ -2085,11 +2087,13 @@
             const [voronoiLayers, setVoronoiLayers] = useState(1); // 1, 2, 3, ...
             const [bruteLayers, setBruteLayers] = useState(1); // 1, 2, 3, ... for brute force layer grouping
             const [sourceFile, setSourceFile] = useState(null);
+            const [sourceFileName, setSourceFileName] = useState('');
             const [sourceData, setSourceData] = useState([]);
             const [sourceColumns, setSourceColumns] = useState([]);
             const [sourceMapping, setSourceMapping] = useState({ id: '', lat: '', lng: '' });
 
             const [targetFile, setTargetFile] = useState(null);
+            const [targetFileName, setTargetFileName] = useState('');
             const [targetData, setTargetData] = useState([]);
             const hasTarget = targetData.length > 0;
             const [targetColumns, setTargetColumns] = useState([]);
@@ -2157,8 +2161,8 @@
                 const f = e.target.files?.[0] || e.dataTransfer?.files?.[0];
                 if (!f) return;
 
-                if (type === 'source') setSourceFile(f);
-                else setTargetFile(f);
+                if (type === 'source') { setSourceFile(f); setSourceFileName(f.name); }
+                else { setTargetFile(f); setTargetFileName(f.name); }
 
                 const extension = f.name.split('.').pop().toLowerCase();
 
@@ -2373,7 +2377,7 @@
                     const conns = [];
                     const added = new Set();
                     processedSites.forEach(s => {
-                        s.neighbors.forEach(n => {
+                        (s.neighbors || []).forEach(n => {
                             const pair = `${s.id}|${n.to}`;
                             if (!added.has(pair)) {
                                 added.add(pair);
@@ -2456,7 +2460,7 @@
                     rawSites = rawSites.filter(s => String(s.originalData?.[filterColumn] || '') === String(filterValue));
                     const filteredIds = new Set(rawSites.map(s => s.id));
                     rawAll = rawAll.filter(s => filteredIds.has(s.id));
-                    rawConns = rawConns.filter(c => filteredIds.has(c.from));
+                    rawConns = rawConns.filter(c => filteredIds.has(c.from) && filteredIds.has(c.to));
                 }
 
                 // Check Match Filter logic
@@ -2549,17 +2553,20 @@
                 const features = filteredAllSites.map(s => ({
                     type: 'Feature',
                     geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-                    properties: { id: s.id, ...s.originalData }
+                    properties: { id: s.id, ...(s.originalData || {}) }
                 }));
-                const lineFeatures = filteredConnections.map(c => {
-                    const p1 = filteredAllSites.find(s => s.id === c.from);
-                    const p2 = filteredAllSites.find(s => s.id === c.to);
-                    return {
-                        type: 'Feature',
-                        geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] },
-                        properties: { from: c.from, to: c.to, distance: c.distance }
-                    }
-                });
+                const lineFeatures = filteredConnections
+                    .map(c => {
+                        const p1 = filteredAllSites.find(s => s.id === c.from);
+                        const p2 = filteredAllSites.find(s => s.id === c.to);
+                        if (!p1 || !p2) return null;
+                        return {
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] },
+                            properties: { from: c.from, to: c.to, distance: c.distance }
+                        }
+                    })
+                    .filter(Boolean);
                 return { type: 'FeatureCollection', features: [...features, ...lineFeatures] };
             }, [filteredAllSites, filteredConnections]);
 
@@ -2682,7 +2689,7 @@
                                 ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${layerColor};margin-right:4px;vertical-align:middle;"></span><span style="font-size:10px;color:${layerColor};font-weight:600;">L${layerNum}</span>`
                                 : '';
                             return `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
-                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
+                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
                             </div>`;
                         }).join('') || `<div style="margin-bottom:4px;font-size:12px;color:#64748b;">None</div>`;
                         const assignedCount = siteData?.neighbors?.length || 0;
@@ -2862,7 +2869,7 @@
                     let currentLayer = -1;
                     let layerRank = 0;
                     // Create a sorted copy of neighbors for Excel export
-                    const neighborsForExcel = [...s.neighbors];
+                    const neighborsForExcel = s.neighbors ? [...s.neighbors] : [];
                     if (calcMethod === 'voronoi') {
                         neighborsForExcel.sort((a, b) => {
                             const layerDiff = (a.layer || 1) - (b.layer || 1);
@@ -2963,7 +2970,7 @@
                                             <div className="accordion-body">
                                                 <div className="mode-selector" style={{ marginBottom: 0 }}>
                                                     <div className={`mode-option ${calcMode === 'all' ? 'active' : ''}`}
-                                                        onClick={() => { setCalcMode('all'); setTargetFile(null); setTargetData([]); setTargetColumns([]); }}>
+                                                        onClick={() => { setCalcMode('all'); setTargetFile(null); setTargetFileName(''); setTargetData([]); setTargetColumns([]); }}>
                                                         All Sites (1 File)
                                                     </div>
                                                     <div className={`mode-option ${calcMode === 'pairwise' ? 'active' : ''}`}
@@ -2988,8 +2995,8 @@
                                                     onDrop={e => { e.preventDefault(); setIsDragging(false); handleFileUpload(e, 'source'); }}
                                                     onClick={() => fileInputRef.current?.click()}>
                                                     <Icons.Upload />
-                                                    {sourceFile
-                                                        ? <strong style={{ color: 'var(--text)', fontSize: '12px' }}>{sourceFile.name}</strong>
+                                                    {sourceFileName
+                                                        ? <strong style={{ color: 'var(--text)', fontSize: '12px' }}>{sourceFileName}</strong>
                                                         : <span>Drag &amp; Drop or <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</span></span>}
                                                     <span style={{ fontSize: '10px', color: '#94a3b8' }}>CSV · TXT · XLS · XLSX</span>
                                                     <input type="file" accept=".csv,.txt,.xlsx,.xls" ref={fileInputRef}
@@ -3015,8 +3022,8 @@
                                                 <div className="accordion-body">
                                                     <div className="dropzone" onClick={() => document.getElementById('tfi2').click()}>
                                                         <Icons.Upload />
-                                                        {targetFile
-                                                            ? <strong style={{ color: 'var(--text)', fontSize: '12px' }}>{targetFile.name}</strong>
+                                                        {targetFileName
+                                                            ? <strong style={{ color: 'var(--text)', fontSize: '12px' }}>{targetFileName}</strong>
                                                             : <span>Drag &amp; Drop or <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</span></span>}
                                                         <span style={{ fontSize: '10px', color: '#94a3b8' }}>CSV · TXT · XLS · XLSX</span>
                                                         <input id="tfi2" type="file" accept=".csv,.txt,.xlsx,.xls"
@@ -3453,7 +3460,7 @@
                                                         <button className="btn-export" disabled={calculatedData.allSites.length === 0} onClick={exportExcel}><Icons.FileSheet /> Excel (XLSX)</button>
                                                     </div>
                                                 </div>
-                                                <button className="btn-outline-red" onClick={() => { setSourceFile(null); setSourceData([]); setSourceColumns([]); setSourceMapping({ id: '', lat: '', lng: '' }); setSelectedSite(null); }}>
+                                                <button className="btn-outline-red" onClick={() => { setSourceFile(null); setSourceFileName(''); setSourceData([]); setSourceColumns([]); setSourceMapping({ id: '', lat: '', lng: '' }); setSelectedSite(null); }}>
                                                     <Icons.Trash /> Clear
                                                 </button>
                                             </div>
