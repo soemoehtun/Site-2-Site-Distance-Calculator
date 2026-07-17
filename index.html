@@ -940,6 +940,27 @@
             border: none;
         }
 
+        /* Selection highlight: pulsing ring on source */
+        .source-highlight-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 3px solid #ef4444;
+            animation: pulse-ring 1.5s ease-out infinite;
+            pointer-events: none;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+
+        /* Selection highlight: neighbor ring */
+        .neighbor-highlight-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid #f59e0b;
+            pointer-events: none;
+        }
+
         /* ------------------------------------------------------------- */
         /* Clean Leaflet Popup Overrides (Point File Creator Style)      */
         /* ------------------------------------------------------------- */
@@ -1013,6 +1034,7 @@
         };
 
         const PALETTE = ['#2563eb', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#84cc16', '#a855f7', '#f43f5e', '#6366f1'];
+        const LAYER_COLORS = ['#22c55e', '#eab308', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1', '#a855f7'];
 
         // Fixed Google Earth icon base URL
         const GE_ICON_BASE = 'https://www.google.com/mapfiles/kml';
@@ -1109,6 +1131,248 @@
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c;
+        }
+
+        // ─── Voronoi / Delaunay helpers ─────────────────────────────────────────
+        // Bowyer-Watson Delaunay triangulation operating in a simple lat/lng plane.
+        // Returns an array of triangles, each: { a, b, c } (indices into pts array).
+        // pts: Array of { x, y } (we'll pass lng as x, lat as y for planar approx)
+        function computeDelaunay(pts) {
+            const n = pts.length;
+            if (n < 3) return [];
+
+            // Super-triangle that contains all points
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            pts.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+            const dx = maxX - minX, dy = maxY - minY;
+            const deltaMax = Math.max(dx, dy) * 10;
+            const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+            // Three super-triangle points appended after original pts
+            const superPts = [
+                { x: midX - 20 * deltaMax, y: midY - deltaMax },
+                { x: midX,                  y: midY + 20 * deltaMax },
+                { x: midX + 20 * deltaMax, y: midY - deltaMax }
+            ];
+            const allPts = pts.concat(superPts);
+            const si = n, sj = n + 1, sk = n + 2; // super-triangle indices
+
+            let triangles = [{ a: si, b: sj, c: sk }];
+
+            for (let pi = 0; pi < n; pi++) {
+                const p = allPts[pi];
+                let badTriangles = [];
+                let goodTriangles = [];
+
+                triangles.forEach(tri => {
+                    const { cx, cy, r } = circumcircle(allPts[tri.a], allPts[tri.b], allPts[tri.c]);
+                    const dist2 = (p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy);
+                    if (dist2 <= r * r + 1e-10) {
+                        badTriangles.push(tri);
+                    } else {
+                        goodTriangles.push(tri);
+                    }
+                });
+
+                // Find boundary polygon (edges not shared by two bad triangles)
+                const edgeCount = new Map();
+                badTriangles.forEach(tri => {
+                    [[tri.a, tri.b], [tri.b, tri.c], [tri.c, tri.a]].forEach(([u, v]) => {
+                        const key = u < v ? `${u}_${v}` : `${v}_${u}`;
+                        edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
+                    });
+                });
+
+                const boundary = [];
+                badTriangles.forEach(tri => {
+                    [[tri.a, tri.b], [tri.b, tri.c], [tri.c, tri.a]].forEach(([u, v]) => {
+                        const key = u < v ? `${u}_${v}` : `${v}_${u}`;
+                        if (edgeCount.get(key) === 1) boundary.push([u, v]);
+                    });
+                });
+
+                boundary.forEach(([u, v]) => {
+                    goodTriangles.push({ a: pi, b: u, c: v });
+                });
+
+                triangles = goodTriangles;
+            }
+
+            // Remove triangles touching the super-triangle vertices
+            return triangles.filter(tri => tri.a < n && tri.b < n && tri.c < n);
+        }
+
+        function circumcircle(p1, p2, p3) {
+            const ax = p1.x, ay = p1.y;
+            const bx = p2.x, by = p2.y;
+            const cx = p3.x, cy = p3.y;
+            const D = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+            if (Math.abs(D) < 1e-10) return { cx: (ax + bx + cx) / 3, cy: (ay + by + cy) / 3, r: 1e10 };
+            const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / D;
+            const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / D;
+            const r = Math.sqrt((ax - ux) * (ax - ux) + (ay - uy) * (ay - uy));
+            return { cx: ux, cy: uy, r };
+        }
+
+        // Returns a Set of point indices that are Delaunay-adjacent (= Voronoi 1-ring) to targetIdx
+        function getDelaunayNeighbors(triangles, targetIdx) {
+            const neighbors = new Set();
+            triangles.forEach(tri => {
+                const verts = [tri.a, tri.b, tri.c];
+                if (verts.includes(targetIdx)) {
+                    verts.forEach(v => { if (v !== targetIdx) neighbors.add(v); });
+                }
+            });
+            return neighbors;
+        }
+
+        // N-ring Voronoi neighbors via BFS through Delaunay adjacency graph.
+        // layer 1 = direct Delaunay neighbors, layer 2 = neighbors of neighbors, etc.
+        // Returns a Map of neighborIdx → layerNumber (1-indexed).
+        function getDelaunayNeighborsNLayers(triangles, targetIdx, nLayers) {
+            if (nLayers < 1) return new Map();
+            const layerMap = new Map();
+            let frontier = new Set([targetIdx]);
+            for (let layer = 1; layer <= nLayers; layer++) {
+                const nextFrontier = new Set();
+                frontier.forEach(idx => {
+                    getDelaunayNeighbors(triangles, idx).forEach(n => {
+                        if (n !== targetIdx && !layerMap.has(n)) {
+                            layerMap.set(n, layer);
+                            nextFrontier.add(n);
+                        }
+                    });
+                });
+                frontier = nextFrontier;
+            }
+            return layerMap;
+        }
+
+        function getDelaunayNeighborsN(triangles, targetIdx, nLayers) {
+            const layerMap = getDelaunayNeighborsNLayers(triangles, targetIdx, nLayers);
+            return new Set(layerMap.keys());
+        }
+
+        // Compute the closed Voronoi cell polygon for a single site from Delaunay triangulation.
+        // Returns array of {lat, lng} vertices in angular order around the site.
+        function computeVoronoiCellPolygon(triangles, pts, siteIdx) {
+            // Find all triangles that contain this site
+            let adjTris = triangles.filter(tri => tri.a === siteIdx || tri.b === siteIdx || tri.c === siteIdx);
+            
+            // If this point is not in any triangle, it might be a duplicate coordinate ignored by Delaunator.
+            // Try to find its first occurrence in the points list which would have been triangulated.
+            if (adjTris.length === 0) {
+                const p = pts[siteIdx];
+                const dupIdx = pts.findIndex(otherP => otherP.x === p.x && otherP.y === p.y);
+                if (dupIdx !== -1 && dupIdx !== siteIdx) {
+                    siteIdx = dupIdx;
+                    adjTris = triangles.filter(tri => tri.a === siteIdx || tri.b === siteIdx || tri.c === siteIdx);
+                }
+            }
+            
+            if (adjTris.length === 0) return [];
+
+            // Compute circumcenter of each adjacent triangle
+            const centers = adjTris.map(tri => {
+                const c = circumcircle(pts[tri.a], pts[tri.b], pts[tri.c]);
+                return { lng: c.cx, lat: c.cy };
+            });
+
+            // Sort circumcenters in angular order around the site
+            const sitePt = pts[siteIdx];
+            centers.sort((a, b) => {
+                const angleA = Math.atan2(a.lat - sitePt.y, a.lng - sitePt.x);
+                const angleB = Math.atan2(b.lat - sitePt.y, b.lng - sitePt.x);
+                return angleA - angleB;
+            });
+
+            return centers;
+        }
+        // ─── End Voronoi helpers ─────────────────────────────────────────────────
+
+        // Find nearest target via brute-force haversine, then return it plus its
+        // 1-ring Voronoi neighbors (from Delaunay dual), sorted by distance to source.
+        function findNearestVoronoi(sourceLat, sourceLng, targets, multiplier) {
+            if (targets.length === 0) return [];
+            if (targets.length === 1) return [{ to: targets[0].id, dist: haversine(sourceLat, sourceLng, targets[0].lat, targets[0].lng) * multiplier }];
+
+            // Step 1: brute-force nearest target (same as Voronoi cell lookup for planar)
+            let minDist = Infinity, nearestIdx = 0;
+            targets.forEach((t, i) => {
+                const d = haversine(sourceLat, sourceLng, t.lat, t.lng);
+                if (d < minDist) { minDist = d; nearestIdx = i; }
+            });
+
+            // Step 2: Delaunay triangulation of target points (lng as x, lat as y)
+            const pts = targets.map(t => ({ x: t.lng, y: t.lat }));
+            const triangles = computeDelaunay(pts);
+
+            // Step 3: get 1-ring Voronoi neighbors of nearestIdx via Delaunay dual
+            const ringSet = getDelaunayNeighbors(triangles, nearestIdx);
+
+            // Step 4: build result - nearest first, then ring sorted by distance
+            const results = [];
+            results.push({ to: targets[nearestIdx].id, dist: minDist * multiplier });
+
+            const ring = [];
+            ringSet.forEach(idx => {
+                if (idx !== nearestIdx) {
+                    ring.push({ to: targets[idx].id, dist: haversine(sourceLat, sourceLng, targets[idx].lat, targets[idx].lng) * multiplier });
+                }
+            });
+            ring.sort((a, b) => a.dist - b.dist);
+            results.push(...ring);
+
+            return results;
+        }
+
+        // Compute Voronoi diagram edges from Delaunay triangulation (dual graph).
+        // Returns array of { lat1, lng1, lat2, lng2, siteA, siteB } where siteA/siteB
+        // are the original site IDs that the Voronoi edge separates.
+        function computeVoronoiEdges(targets) {
+            if (targets.length < 3) return [];
+            const pts = targets.map(t => ({ x: t.lng, y: t.lat }));
+            const triangles = computeDelaunay(pts);
+            if (triangles.length === 0) return [];
+
+            // Compute circumcenter for each triangle
+            const triCenters = triangles.map(tri => {
+                const c = circumcircle(pts[tri.a], pts[tri.b], pts[tri.c]);
+                return { cx: c.cx, cy: c.cy };
+            });
+
+            // Build edge→triangle adjacency map
+            const edgeToTris = new Map();
+            triangles.forEach((tri, ti) => {
+                const edges = [[tri.a, tri.b], [tri.b, tri.c], [tri.c, tri.a]];
+                edges.forEach(([u, v]) => {
+                    const key = u < v ? `${u}_${v}` : `${v}_${u}`;
+                    if (!edgeToTris.has(key)) edgeToTris.set(key, []);
+                    edgeToTris.get(key).push(ti);
+                });
+            });
+
+            const voronoiEdges = [];
+            const addedEdges = new Set();
+
+            edgeToTris.forEach((tris, key) => {
+                if (tris.length === 2) {
+                    const [t1, t2] = tris;
+                    const eKey = t1 < t2 ? `${t1}_${t2}` : `${t2}_${t1}`;
+                    if (!addedEdges.has(eKey)) {
+                        addedEdges.add(eKey);
+                        // The key encodes the Delaunay edge endpoints (site indices)
+                        const [u, v] = key.split('_').map(Number);
+                        voronoiEdges.push({
+                            lat1: triCenters[t1].cy, lng1: triCenters[t1].cx,
+                            lat2: triCenters[t2].cy, lng2: triCenters[t2].cx,
+                            siteA: targets[u]?.id || null,
+                            siteB: targets[v]?.id || null
+                        });
+                    }
+                }
+            });
+
+            return voronoiEdges;
         }
 
         const MAP_STYLES = {
@@ -1308,7 +1572,7 @@
             );
         };
 
-        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconSize, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget }) => {
+        const MapView = ({ sites, connections, hoveredSite, selectedSite, onSiteClick, mapStyle, pointSize, pointColor, targetPointColor, lineThickness, lineColor, lineOpacity, recenterTrigger, markerIconUrl, iconColor, iconOpacity, iconSize, neighborMarkerIconUrl, neighborIconColor, neighborIconOpacity, neighborIconSize, showSiteLabels, markerSize, singleIconMode, sitesWithNeighbors, nNeighbors, distanceUnit, popupColumns, popupColumnsTarget, showVoronoi, voronoiEdges, calcMethod, voronoiLayers }) => {
             const mapRef = useRef(null);
             const mapInst = useRef(null);
             const tileLayerRef = useRef(null);
@@ -1319,6 +1583,8 @@
             const markersMapRef = useRef(new Map());
             const hoverHandlersRef = useRef(new Map());
             const clusterGroupRef = useRef(null);
+            const voronoiLinesRef = useRef([]);
+            const selectionRef = useRef({ lines: [], markers: [] });
 
             const handleZoomIn = useCallback(() => { if (mapInst.current) mapInst.current.zoomIn(); }, []);
             const handleZoomOut = useCallback(() => { if (mapInst.current) mapInst.current.zoomOut(); }, []);
@@ -1443,14 +1709,23 @@
                     const siteWithNeighbors = sitesWithNeighbors?.find(sw => sw.id === s.id);
                     
                     if (s.isSource || singleIconMode) {
-                        const neighborList = siteWithNeighbors?.neighbors?.map((n, idx) => 
-                            `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
-                                <strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
-                            </div>`
-                        ).join('') || `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
+                        const neighborList = siteWithNeighbors?.neighbors?.map((n, idx) => {
+                            const layerNum = n.layer || 1;
+                            const layerColor = calcMethod === 'voronoi' ? LAYER_COLORS[(layerNum - 1) % LAYER_COLORS.length] : '#94a3b8';
+                            const layerBadge = calcMethod === 'voronoi'
+                                ? `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${layerColor}; margin-right: 4px; vertical-align: middle;"></span><span style="font-size: 10px; color: ${layerColor}; font-weight: 600;">L${layerNum}</span>`
+                                : '';
+                            return `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
+                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
+                            </div>`;
+                        }).join('') || `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
                         
+                        const assignedCount = siteWithNeighbors?.neighbors?.length || 0;
+                        const headerLabel = calcMethod === 'voronoi'
+                            ? `Voronoi Neighbors (${voronoiLayers}-Layer)`
+                            : `Nearest ${nNeighbors || 3} Neighbors (${assignedCount} assigned)`;
                         neighborHtml = `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;">
-                            <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase;">Nearest ${nNeighbors || 3} Neighbors</div>
+                            <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase;">${headerLabel}</div>
                             ${neighborList}
                         </div>`;
                     } else if (s.isTarget) {
@@ -1516,6 +1791,12 @@
                         }
                     });
 
+                    // Click handler for source + neighbor highlight
+                    marker.on('click', (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        onSiteClick(s.id);
+                    });
+
                     newMarkers.push(marker);
                     markersMapRef.current.set(s.id, marker);
                 });
@@ -1558,6 +1839,35 @@
 
             }, [hoveredSite, lineOpacity, lineThickness, connections]);
 
+            // 4. Voronoi Diagram Overlay
+            useEffect(() => {
+                if (!mapInst.current) return;
+                const map = mapInst.current;
+
+                voronoiLinesRef.current.forEach(layer => layer.remove());
+                voronoiLinesRef.current = [];
+
+                if (!showVoronoi || voronoiEdges.length === 0) return;
+
+                voronoiEdges.forEach(edge => {
+                    const line = L.polyline(
+                        [[edge.lat1, edge.lng1], [edge.lat2, edge.lng2]],
+                        {
+                            color: '#8b5cf6',
+                            weight: 2,
+                            opacity: 0.8,
+                            interactive: false
+                        }
+                    ).addTo(map);
+                    voronoiLinesRef.current.push(line);
+                });
+
+                return () => {
+                    voronoiLinesRef.current.forEach(layer => layer.remove());
+                    voronoiLinesRef.current = [];
+                };
+            }, [showVoronoi, voronoiEdges]);
+
             // Auto-pan behavior on table row selection
             useEffect(() => {
                 if (mapInst.current && sites.length > 0) {
@@ -1574,6 +1884,165 @@
                     mapInst.current.flyTo([site.lat, site.lng], currentZoom > 12 ? currentZoom : 12, { duration: 0.5 });
                 }
             }, [selectedSite, sites]);
+
+            // 5. Selection Highlight: show source + related neighbor sites, Voronoi edges colored by layer
+            useEffect(() => {
+                if (!mapInst.current) return;
+                const map = mapInst.current;
+
+                // Cleanup previous highlights
+                selectionRef.current.lines.forEach(l => l.remove());
+                selectionRef.current.markers.forEach(m => m.remove());
+                selectionRef.current = { lines: [], markers: [] };
+
+                if (!selectedSite) return;
+
+                const site = sites.find(s => s.id.toLowerCase() === selectedSite.toLowerCase());
+                if (!site) return;
+
+                // Find this site's neighbors from sitesWithNeighbors
+                const siteData = sitesWithNeighbors?.find(sw => sw.id === selectedSite);
+
+                if (site.isSource || sitesWithNeighbors?.some(sw => sw.id === selectedSite)) {
+                    // Build neighborId → layer lookup
+                    const neighborLayerMap = new Map();
+                    siteData?.neighbors?.forEach(n => {
+                        neighborLayerMap.set(n.to, n.layer || 1);
+                    });
+
+                    // Dim all other markers
+                    markersMapRef.current.forEach((marker, id) => {
+                        if (id !== selectedSite && !neighborLayerMap.has(id)) {
+                            if (marker.setOpacity) marker.setOpacity(0.2);
+                        } else {
+                            if (marker.setOpacity) marker.setOpacity(1.0);
+                            if (marker.setZIndexOffset) marker.setZIndexOffset(1000);
+                        }
+                    });
+
+                    // Dim all connection lines
+                    linesMapRef.current.forEach((data) => {
+                        data.layer.setStyle({ opacity: 0.08 });
+                    });
+
+                    // Dim existing Voronoi diagram edges (the purple ones)
+                    voronoiLinesRef.current.forEach(l => {
+                        if (l.setStyle) l.setStyle({ opacity: 0.1, weight: 1 });
+                    });
+
+                    // Compute Voronoi cell polygons for neighbor sites per layer (skip source cell)
+                    if (calcMethod === 'voronoi') {
+                        const pts = sites.map(s => ({ x: s.lng, y: s.lat }));
+                        const siteIdxMap = new Map(sites.map((s, i) => [s.id, i]));
+                        const triangles = computeDelaunay(pts);
+
+                        // Collect neighbor cells by layer, sorted descending so outer layers draw first (underneath)
+                        const cellsToDraw = [];
+                        neighborLayerMap.forEach((layer, nid) => {
+                            cellsToDraw.push({ siteId: nid, layer });
+                        });
+                        cellsToDraw.sort((a, b) => b.layer - a.layer);
+
+                        cellsToDraw.forEach(({ siteId, layer }) => {
+                            const idx = siteIdxMap.get(siteId);
+                            if (idx === undefined) return;
+                            const polygon = computeVoronoiCellPolygon(triangles, pts, idx);
+                            if (polygon.length < 3) return;
+
+                            const latlngs = polygon.map(p => [p.lat, p.lng]);
+                            const color = LAYER_COLORS[(layer - 1) % LAYER_COLORS.length];
+                            const cellPolygon = L.polygon(latlngs, {
+                                color: color,
+                                weight: 2,
+                                opacity: 0.7,
+                                fillColor: color,
+                                fillOpacity: 0.15,
+                                interactive: false
+                            }).addTo(map);
+                            selectionRef.current.lines.push(cellPolygon);
+                        });
+                    } else {
+                        // Brute-force mode: highlight connection lines
+                        siteData?.neighbors?.forEach(n => {
+                            const lineColor = LAYER_COLORS[0];
+                            const key1 = `${selectedSite}|${n.to}`;
+                            const key2 = `${n.to}|${selectedSite}`;
+                            const lineData = linesMapRef.current.get(key1) || linesMapRef.current.get(key2);
+                            if (lineData) {
+                                lineData.layer.setStyle({ color: lineColor, weight: 4, opacity: 0.9, dashArray: null });
+                                selectionRef.current.lines.push(lineData.layer);
+                            } else {
+                                const targetSite = sites.find(s => s.id === n.to);
+                                if (targetSite) {
+                                    const highlightLine = L.polyline(
+                                        [[site.lat, site.lng], [targetSite.lat, targetSite.lng]],
+                                        { color: lineColor, weight: 3, opacity: 0.85, dashArray: '6, 4' }
+                                    ).addTo(map);
+                                    selectionRef.current.lines.push(highlightLine);
+                                }
+                            }
+                        });
+
+
+                    }
+
+                    // Add pulsing ring on source marker
+                    const sourceIcon = L.divIcon({
+                        className: 'custom-marker-icon',
+                        html: `<div class="source-highlight-ring" style="width: 30px; height: 30px; top: -15px; left: -15px;"></div>`,
+                        iconSize: [0, 0],
+                        iconAnchor: [0, 0]
+                    });
+                    const sourceHighlight = L.marker([site.lat, site.lng], { icon: sourceIcon, interactive: false }).addTo(map);
+                    selectionRef.current.markers.push(sourceHighlight);
+
+                    // Add colored rings on neighbor markers (by layer)
+                    neighborLayerMap.forEach((layer, nid) => {
+                        const ns = sites.find(s2 => s2.id === nid);
+                        if (ns) {
+                            const ringColor = LAYER_COLORS[(layer - 1) % LAYER_COLORS.length];
+                            const neighborIcon = L.divIcon({
+                                className: 'custom-marker-icon',
+                                html: `<div style="position: absolute; width: 24px; height: 24px; top: -12px; left: -12px; border-radius: 50%; border: 2.5px solid ${ringColor}; pointer-events: none;"></div>`,
+                                iconSize: [0, 0],
+                                iconAnchor: [0, 0]
+                            });
+                            const neighborHighlight = L.marker([ns.lat, ns.lng], { icon: neighborIcon, interactive: false }).addTo(map);
+                            selectionRef.current.markers.push(neighborHighlight);
+                        }
+                    });
+                }
+
+                return () => {
+                    selectionRef.current.lines.forEach(l => l.remove());
+                    selectionRef.current.markers.forEach(m => m.remove());
+                    selectionRef.current = { lines: [], markers: [] };
+                    markersMapRef.current.forEach((marker) => {
+                        if (marker.setOpacity) marker.setOpacity(1.0);
+                        if (marker.setZIndexOffset) marker.setZIndexOffset(0);
+                    });
+                    linesMapRef.current.forEach((data) => {
+                        data.layer.setStyle({ opacity: lineOpacity / 100, weight: parseInt(lineThickness), color: lineColor });
+                    });
+                    // Restore Voronoi diagram edges
+                    voronoiLinesRef.current.forEach(l => {
+                        if (l.setStyle) l.setStyle({ opacity: 0.8, weight: 2, color: '#8b5cf6' });
+                    });
+                };
+            }, [selectedSite, sites, sitesWithNeighbors, lineOpacity, lineThickness, lineColor, calcMethod, voronoiEdges]);
+
+            // Clear selection when clicking empty map area
+            useEffect(() => {
+                if (!mapInst.current) return;
+                const map = mapInst.current;
+                const handleMapClick = (e) => {
+                    if (e.originalEvent && selectedSite) {
+                        onSiteClick(null);
+                    }
+                };
+                map.on('click', handleMapClick);
+                return () => { map.off('click', handleMapClick); };
+            }, [selectedSite]);
 
             useEffect(() => {
                 const resizeObserver = new ResizeObserver(() => {
@@ -1604,6 +2073,9 @@
         // --- Main App Component ---
         const App = () => {
             const [calcMode, setCalcMode] = useState('all'); // 'all' or 'pairwise'
+            const [calcMethod, setCalcMethod] = useState('brute'); // 'brute' or 'voronoi'
+            const [voronoiLayers, setVoronoiLayers] = useState(1); // 1, 2, 3, ...
+            const [bruteLayers, setBruteLayers] = useState(1); // 1, 2, 3, ... for brute force layer grouping
             const [sourceFile, setSourceFile] = useState(null);
             const [sourceData, setSourceData] = useState([]);
             const [sourceColumns, setSourceColumns] = useState([]);
@@ -1614,7 +2086,7 @@
             const hasTarget = targetData.length > 0;
             const [targetColumns, setTargetColumns] = useState([]);
             const [targetMapping, setTargetMapping] = useState({ id: '', lat: '', lng: '' });
-            const [nNeighbors, setNNeighbors] = useState(3);
+            const [nNeighbors, setNNeighbors] = useState(1);
             const [maxDistance, setMaxDistance] = useState(null);
             const [distanceOp, setDistanceOp] = useState('<=');
             const [activeTab, setActiveTab] = useState('map');
@@ -1662,6 +2134,8 @@
             const [markerOpacity, setMarkerOpacity] = useState(100);
             const [showLegend, setShowLegend] = useState(false);
             const [showSiteLabels, setShowSiteLabels] = useState(true);
+            const [showVoronoi, setShowVoronoi] = useState(false);
+            const [voronoiEdges, setVoronoiEdges] = useState([]);
 
             const fileInputRef = useRef(null);
             const [recenterTrigger, setRecenterTrigger] = useState(0);
@@ -1772,7 +2246,21 @@
                 const total = parsedSource.length;
                 let currentIndex = 0;
                 // Process 50 sites per frame. Adjust higher for speed, lower for smoother progress bar.
-                const CHUNK_SIZE = 50; 
+                const CHUNK_SIZE = 50;
+
+                // Pre-compute Voronoi triangulation on ALL combined sites (source + target)
+                let voronoiAllPts = null;
+                let voronoiTriangles = null;
+                if (calcMethod === 'voronoi') {
+                    const combinedMap = new Map();
+                    parsedSource.forEach(s => combinedMap.set(s.id, s));
+                    parsedTarget.forEach(s => {
+                        if (!combinedMap.has(s.id)) combinedMap.set(s.id, s);
+                    });
+                    voronoiAllPts = Array.from(combinedMap.values());
+                    const pts = voronoiAllPts.map(t => ({ x: t.lng, y: t.lat }));
+                    voronoiTriangles = computeDelaunay(pts);
+                }
 
                 const processChunk = () => {
                     const end = Math.min(currentIndex + CHUNK_SIZE, total);
@@ -1780,38 +2268,80 @@
                     for (let i = currentIndex; i < end; i++) {
                         const s1 = parsedSource[i];
                         
-                        let distances = parsedTarget
-                            .filter(s2 => {
-                                // IMPORTANT LOGIC FIX:
-                                // 1-file mode (!hasTarget): We MUST strictly exclude the exact same site (same ID) from being its own neighbor regardless of checkbox.
-                                // 2-file mode (pairwise): Sites with the same ID shouldn't be artificially excluded.
-                                if (!hasTarget && s1.id === s2.id) return false;
-                                return true;
-                            })
-                            .map(s2 => {
-                                const d = haversine(s1.lat, s1.lng, s2.lat, s2.lng) * multiplier;
-                                return { to: s2.id, dist: d };
-                            });
+                        let neighbors;
 
-                        // Checkbox strictly checks for IDENTICAL physical sites
-                        // 1e-6 safely handles any minute float rounding errors ensuring 0 is captured
-                        if (excludeZero) {
-                            distances = distances.filter(d => d.dist > 1e-6);
+                        if (calcMethod === 'voronoi' && voronoiAllPts && voronoiTriangles) {
+                            // Find the source's index in the combined Voronoi point set
+                            const srcIdx = voronoiAllPts.findIndex(s => s.id === s1.id);
+                            if (srcIdx >= 0) {
+                                // Get N-ring Voronoi neighbors with layer info
+                                let layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, srcIdx, voronoiLayers);
+                                
+                                // If source has no Delaunay neighbors (degenerate: duplicate coords
+                                // with another site), fall back to nearest other site's neighbors
+                                if (layerMap.size === 0) {
+                                    let fallbackIdx = -1;
+                                    let minDist = Infinity;
+                                    voronoiAllPts.forEach((s, i) => {
+                                        if (i !== srcIdx) {
+                                            const d = haversine(s1.lat, s1.lng, s.lat, s.lng);
+                                            if (d < minDist) { minDist = d; fallbackIdx = i; }
+                                        }
+                                    });
+                                    if (fallbackIdx >= 0) {
+                                        layerMap = getDelaunayNeighborsNLayers(voronoiTriangles, fallbackIdx, voronoiLayers);
+                                    }
+                                }
+                                
+                                const results = [];
+                                layerMap.forEach((layer, idx) => {
+                                    if (idx !== srcIdx) {
+                                        const d = haversine(s1.lat, s1.lng, voronoiAllPts[idx].lat, voronoiAllPts[idx].lng) * multiplier;
+                                        results.push({ to: voronoiAllPts[idx].id, dist: d, layer });
+                                    }
+                                });
+                                results.sort((a, b) => a.dist - b.dist);
+                                neighbors = results;
+                            } else {
+                                neighbors = [];
+                            }
+                        } else {
+                            // Brute-force: existing logic
+                            let distances = parsedTarget
+                                .filter(s2 => {
+                                    // IMPORTANT LOGIC FIX:
+                                    // 1-file mode (!hasTarget): We MUST strictly exclude the exact same site (same ID) from being its own neighbor regardless of checkbox.
+                                    // 2-file mode (pairwise): Sites with the same ID shouldn't be artificially excluded.
+                                    if (!hasTarget && s1.id === s2.id) return false;
+                                    return true;
+                                })
+                                .map(s2 => {
+                                    const d = haversine(s1.lat, s1.lng, s2.lat, s2.lng) * multiplier;
+                                    return { to: s2.id, dist: d };
+                                });
+
+                            // Checkbox strictly checks for IDENTICAL physical sites
+                            // 1e-6 safely handles any minute float rounding errors ensuring 0 is captured
+                            if (excludeZero) {
+                                distances = distances.filter(d => d.dist > 1e-6);
+                            }
+
+                            if (maxDistance !== null && !isNaN(maxDistance)) {
+                                const op = distanceOp;
+                                distances = distances.filter(d => {
+                                    if (op === '<') return d.dist < maxDistance;
+                                    if (op === '<=') return d.dist <= maxDistance;
+                                    if (op === '>') return d.dist > maxDistance;
+                                    if (op === '>=') return d.dist >= maxDistance;
+                                    if (op === '=') return d.dist === maxDistance;
+                                    return true;
+                                });
+                            }
+                            distances.sort((a, b) => a.dist - b.dist);
+                            neighbors = distances.slice(0, nNeighbors);
                         }
 
-                        if (maxDistance !== null && !isNaN(maxDistance)) {
-                            const op = distanceOp;
-                            distances = distances.filter(d => {
-                                if (op === '<') return d.dist < maxDistance;
-                                if (op === '<=') return d.dist <= maxDistance;
-                                if (op === '>') return d.dist > maxDistance;
-                                if (op === '>=') return d.dist >= maxDistance;
-                                if (op === '=') return d.dist === maxDistance;
-                                return true;
-                            });
-                        }
-                        distances.sort((a, b) => a.dist - b.dist);
-                        newSites.push({ ...s1, neighbors: distances.slice(0, nNeighbors) });
+                        newSites.push({ ...s1, neighbors });
                     }
 
                     currentIndex = end;
@@ -1855,7 +2385,12 @@
                     });
 
                     setCalculatedData({ sitesWithNeighbors: processedSites, allSites: allUnified, connections: conns });
-                    
+
+                    // Auto-enable Voronoi diagram when both source and target files are present
+                    if (hasTarget) {
+                        setShowVoronoi(true);
+                    }
+
                     // Finish
                     setProgress(100);
                     setTimeout(() => {
@@ -1867,7 +2402,7 @@
                 // Kick off the first chunk
                 setTimeout(processChunk, 0);
 
-            }, [sourceData, sourceMapping, targetData, targetMapping, nNeighbors, calcMode, maxDistance, distanceOp, distanceUnit, excludeZero]);
+            }, [sourceData, sourceMapping, targetData, targetMapping, nNeighbors, calcMode, maxDistance, distanceOp, distanceUnit, excludeZero, calcMethod, voronoiLayers]);
 
             const { sitesWithNeighbors, allSites, connections } = useMemo(() => {
                 let { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns } = calculatedData;
@@ -1955,6 +2490,20 @@
                 }
             }, [filterSearch, allSites]);
 
+            // Compute Voronoi edges when showVoronoi is toggled or sites change
+            useEffect(() => {
+                if (!showVoronoi || calcMethod !== 'voronoi') {
+                    setVoronoiEdges([]);
+                    return;
+                }
+                const sites = calculatedData.allSites;
+                if (sites.length < 3) {
+                    setVoronoiEdges([]);
+                    return;
+                }
+                setVoronoiEdges(computeVoronoiEdges(sites));
+            }, [showVoronoi, calculatedData.allSites, calcMethod]);
+
             // Drag patterns
             const onDragOver = e => { e.preventDefault(); setIsDragging(true); };
             const onDragLeave = () => setIsDragging(false);
@@ -2038,7 +2587,7 @@
       <scale>0.7</scale>
     </LabelStyle>
     <BalloonStyle>
-      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+      <text><![CDATA[$[description]]]></text>
     </BalloonStyle>
   </Style>
   <Style id="neighborStyle">
@@ -2052,21 +2601,7 @@
       <scale>0.7</scale>
     </LabelStyle>
     <BalloonStyle>
-      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
-    </BalloonStyle>
-  </Style>
-  <Style id="targetStyle">
-    <IconStyle>
-      <scale>${sourceIconScale}</scale>
-      <Icon>
-        <href>${sourceIconHref}</href>
-      </Icon>
-    </IconStyle>
-    <LabelStyle>
-      <scale>0.7</scale>
-    </LabelStyle>
-    <BalloonStyle>
-      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+      <text><![CDATA[$[description]]]></text>
     </BalloonStyle>
   </Style>
   <Style id="lineStyle">
@@ -2075,7 +2610,7 @@
       <width>${kmlLineWidth}</width>
     </LineStyle>
     <BalloonStyle>
-      <text><![CDATA[<div style="font-family:Arial,sans-serif;font-size:13px;"><b style="font-size:15px;">$[name]</b><br/><br/>$[description]</div>]]></text>
+      <text><![CDATA[$[description]]]></text>
     </BalloonStyle>
   </Style>
   <Folder>
@@ -2094,7 +2629,9 @@
                          colsToUse.forEach(col => {
                              const val = s.originalData[col];
                              if (val !== undefined && val !== null && val !== '') {
-                                 extraInfoHtml += `<div style="margin-bottom:2px;"><b>${col}:</b> ${val}</div>`;
+                                 extraInfoHtml += `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
+                                     <strong>${col}:</strong> ${val}
+                                 </div>`;
                              }
                          });
                     }
@@ -2103,9 +2640,22 @@
                     const siteData = neighborDataMap.get(s.id);
 
                     if (s.isSource || !hasTarget) {
-                        const neighborList = siteData?.neighbors?.map((n, idx) => `${idx + 1}. ${n.to} (${n.dist.toFixed(3)} ${distanceUnit})`).join('<br/>') || 'None';
-                        neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
-                            <b>Nearest ${nNeighbors} Neighbors:</b><br/>
+                        const neighborList = siteData?.neighbors?.map((n, idx) => {
+                            const layerNum = n.layer || 1;
+                            const layerColor = calcMethod === 'voronoi' ? LAYER_COLORS[(layerNum - 1) % LAYER_COLORS.length] : '#94a3b8';
+                            const layerBadge = calcMethod === 'voronoi'
+                                ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${layerColor};margin-right:4px;vertical-align:middle;"></span><span style="font-size:10px;color:${layerColor};font-weight:600;">L${layerNum}</span>`
+                                : '';
+                            return `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
+                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${n.dist.toFixed(3)} ${distanceUnit}
+                            </div>`;
+                        }).join('') || `<div style="margin-bottom:4px;font-size:12px;color:#64748b;">None</div>`;
+                        const assignedCount = siteData?.neighbors?.length || 0;
+                        const headerLabel = calcMethod === 'voronoi'
+                            ? `Voronoi Neighbors (${voronoiLayers}-Layer)`
+                            : `Nearest ${nNeighbors || 3} Neighbors (${assignedCount} assigned)`;
+                        neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+                            <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:6px;text-transform:uppercase;">${headerLabel}</div>
                             ${neighborList}
                         </div>`;
                     } else if (s.isTarget && !s.isSource) {
@@ -2118,16 +2668,25 @@
                             });
                         });
                         if (parentSources.length > 0) {
-                            const sourceList = parentSources.map(ps => `${ps.id} (${ps.dist.toFixed(3)} ${distanceUnit})`).join('<br/>');
-                            neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
-                                <b>Parent Source Sites:</b><br/>
+                            const sourceList = parentSources.map(ps =>
+                                `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
+                                    <strong>${ps.id}:</strong> ${ps.dist.toFixed(3)} ${distanceUnit}
+                                </div>`
+                            ).join('');
+                            neighborHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+                                <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:6px;text-transform:uppercase;">Parent Source Sites</div>
                                 ${sourceList}
                             </div>`;
                         }
                     }
 
-                    let descHtml = `<div style="font-family:Arial,sans-serif;font-size:12px;min-width:200px;">
-                        ${extraInfoHtml}
+                    let descHtml = `<div style="font-family:'Inter',Arial,sans-serif;min-width:160px;max-height:280px;overflow-y:auto;">
+                        <div style="font-size:13px;font-weight:600;color:#0f172a;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;padding-right:16px;">
+                            ${s.id}
+                        </div>
+                        <div>
+                            ${extraInfoHtml}
+                        </div>
                         ${neighborHtml}
                     </div>`;
 
@@ -2169,7 +2728,92 @@
                 });
 
                 kml += `  </Folder>
-</Document>
+`;
+
+                // Voronoi Cell Polygons Folder (for each source site's neighbor cells)
+                if (calcMethod === 'voronoi') {
+                    const allPts = allSites.map(s => ({ x: s.lng, y: s.lat }));
+                    const allSiteIdxMap = new Map(allSites.map((s, i) => [s.id, i]));
+                    const triangles = computeDelaunay(allPts);
+
+                    let hasPolygons = false;
+                    let polygonFolder = `  <Folder>
+    <name>Voronoi Cell Polygons</name>
+`;
+
+                    // Generate a unique style per layer
+                    const layerStyleMap = new Map();
+                    LAYER_COLORS.forEach((color, idx) => {
+                        const kmlColor = hexToKml(color, 0.3);
+                        const kmlLineColor = hexToKml(color, 0.7);
+                        const styleId = `voronoiCellStyle${idx}`;
+                        layerStyleMap.set(idx, styleId);
+                        polygonFolder += `  <Style id="${styleId}">
+    <LineStyle><color>${kmlLineColor}</color><width>2</width></LineStyle>
+    <PolyStyle><color>${kmlColor}</color></PolyStyle>
+  </Style>
+`;
+                    });
+
+                    sitesWithNeighbors.forEach(siteData => {
+                        siteData.neighbors?.forEach(n => {
+                            const idx = allSiteIdxMap.get(n.to);
+                            if (idx === undefined) return;
+                            const polygon = computeVoronoiCellPolygon(triangles, allPts, idx);
+                            if (polygon.length < 3) return;
+
+                            const layerNum = n.layer || 1;
+                            const layerIdx = (layerNum - 1) % LAYER_COLORS.length;
+                            const styleId = layerStyleMap.get(layerIdx) || 'voronoiCellStyle0';
+                            const coords = polygon.map(p => `${p.lng},${p.lat},0`).join(' ');
+
+                            polygonFolder += `    <Placemark>
+      <name>${siteData.id} → ${n.to} (L${layerNum})</name>
+      <styleUrl>#${styleId}</styleUrl>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>${coords}</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+`;
+                            hasPolygons = true;
+                        });
+                    });
+
+                    if (hasPolygons) {
+                        polygonFolder += `  </Folder>
+`;
+                        kml += polygonFolder;
+                    }
+                }
+
+                // Voronoi Edge Lines Folder (matches map's purple voronoi overlay)
+                if (showVoronoi && voronoiEdges.length > 0) {
+                    const kmlVoronoiEdgeColor = hexToKml('#8b5cf6', 0.8);
+                    kml += `  <Style id="voronoiEdgeStyle">
+    <LineStyle><color>${kmlVoronoiEdgeColor}</color><width>2</width></LineStyle>
+  </Style>
+  <Folder>
+    <name>Voronoi Edges</name>
+`;
+                    voronoiEdges.forEach(edge => {
+                        kml += `    <Placemark>
+      <name>${edge.siteA || ''} - ${edge.siteB || ''}</name>
+      <styleUrl>#voronoiEdgeStyle</styleUrl>
+      <LineString>
+        <coordinates>${edge.lng1},${edge.lat1},0 ${edge.lng2},${edge.lat2},0</coordinates>
+      </LineString>
+    </Placemark>
+`;
+                    });
+                    kml += `  </Folder>
+`;
+                }
+
+                kml += `</Document>
 </kml>`;
                 downloadBlob(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), 'distances.kml');
             };
@@ -2180,48 +2824,49 @@
                 // Detailed Distances (Directed: Source -> Neighbor with Rank)
                 const detailedRows = [];
                 calculatedData.sitesWithNeighbors.forEach(s => {
-                    s.neighbors.forEach((n, idx) => {
-                        detailedRows.push({
-                            'Source Site': s.id,
-                            'Rank': idx + 1,
-                            'Neighbor Site': n.to,
-                            [`Distance (${distanceUnit})`]: Number(n.dist.toFixed(3)) // Corrected to export as Number data type
+                    let currentLayer = -1;
+                    let layerRank = 0;
+                    // Create a sorted copy of neighbors for Excel export
+                    const neighborsForExcel = [...s.neighbors];
+                    if (calcMethod === 'voronoi') {
+                        neighborsForExcel.sort((a, b) => {
+                            const layerDiff = (a.layer || 1) - (b.layer || 1);
+                            if (layerDiff !== 0) return layerDiff;
+                            return a.dist - b.dist;
                         });
+                    }
+                    
+                    neighborsForExcel.forEach((n, idx) => {
+                        let rank = idx + 1;
+                        if (calcMethod === 'voronoi') {
+                            const l = n.layer || 1;
+                            if (l !== currentLayer) {
+                                currentLayer = l;
+                                layerRank = 1;
+                            } else {
+                                layerRank++;
+                            }
+                            rank = layerRank;
+                        }
+                        
+                        const row = {
+                            'Source Site': s.id,
+                            'Neighbor Site': n.to,
+                            [`Distance (${distanceUnit})`]: Number(n.dist.toFixed(3))
+                        };
+                        
+                        if (calcMethod === 'voronoi') {
+                            row['Voronoi Layer'] = n.layer || 1;
+                        }
+                        
+                        row['Rank'] = rank;
+                        detailedRows.push(row);
                     });
                 });
 
                 const wsDetailed = XLSX.utils.json_to_sheet(detailedRows);
 
-                // Sites List - Loop over ALL sites to include targets in the Excel file
-                const excelSitesMap = new Map();
-                calculatedData.sitesWithNeighbors.forEach(s => excelSitesMap.set(s.id, s));
-
-                const wsSites = XLSX.utils.json_to_sheet(calculatedData.allSites.map(s => {
-                    const detailed = excelSitesMap.get(s.id);
-                    let neighborStr = '';
-                    
-                    if (s.isSource || !hasTarget) {
-                         neighborStr = detailed?.neighbors?.map((n, idx) => `${idx + 1}. ${n.to} (${n.dist.toFixed(2)} ${distanceUnit})`).join(' | ') || 'None';
-                    } else {
-                         neighborStr = 'N/A (Target Site)';
-                    }
-                    
-                    return {
-                        ID: s.id,
-                        Lat: s.lat,
-                        Lng: s.lng,
-                        Type: !hasTarget ? 'Site' : (s.isSource && s.isTarget ? 'Source & Target' : (s.isSource ? 'Source' : 'Target')),
-                        Neighbors: neighborStr
-                    };
-                }));
-
-                const wsDist = XLSX.utils.json_to_sheet(calculatedData.connections.map(c => ({
-                    From: c.from, To: c.to, [`Distance (${distanceUnit})`]: Number(c.distance.toFixed(3)) // Corrected to export as Number data type
-                })));
-
                 XLSX.utils.book_append_sheet(wb, wsDetailed, "Detailed_Distances");
-                XLSX.utils.book_append_sheet(wb, wsSites, "Sites");
-                XLSX.utils.book_append_sheet(wb, wsDist, "Unique_Connections");
                 XLSX.writeFile(wb, "distances.xlsx");
             };
 
@@ -2578,6 +3223,17 @@
                                                         <span style={{ position: 'absolute', content: '""', height: '14px', width: '14px', left: '3px', bottom: '3px', backgroundColor: 'white', transition: '0.4s', borderRadius: '50%', transform: showSiteLabels ? 'translateX(20px)' : 'translateX(0)' }}></span>
                                                     </label>
                                                 </div>
+
+                                                {calcMethod === 'voronoi' && (
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}>Voronoi Diagram</div>
+                                                    <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '20px', cursor: 'pointer' }}>
+                                                        <input type="checkbox" checked={showVoronoi} onChange={e => setShowVoronoi(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                                                        <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: showVoronoi ? '#8b5cf6' : '#cbd5e1', transition: '0.4s', borderRadius: '20px' }}></span>
+                                                        <span style={{ position: 'absolute', content: '""', height: '14px', width: '14px', left: '3px', bottom: '3px', backgroundColor: 'white', transition: '0.4s', borderRadius: '50%', transform: showVoronoi ? 'translateX(20px)' : 'translateX(0)' }}></span>
+                                                    </label>
+                                                </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -2641,14 +3297,50 @@
                                         {accordionOpen.controls && (
                                             <div className="accordion-body">
                                                 <div className="form-group">
-                                                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <span>Number of Nearest Neighbors (N)</span>
-                                                        <input type="number" min="1" max="50" value={nNeighbors}
-                                                            onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v)) setNNeighbors(v); }}
-                                                            style={{ width: '52px', padding: '3px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: '4px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 600, background: '#f1f5f9' }} />
-                                                    </label>
-                                                    <input type="range" className="thin-slider" min="1" max="50" value={nNeighbors} onChange={e => setNNeighbors(parseInt(e.target.value))} style={{ marginTop: '8px' }} />
+                                                    <label>Calculation Method</label>
+                                                    <div className="mode-selector" style={{ marginBottom: 0 }}>
+                                                        <div className={`mode-option ${calcMethod === 'brute' ? 'active' : ''}`}
+                                                            onClick={() => setCalcMethod('brute')}>
+                                                            Brute Force {nNeighbors}-NN
+                                                        </div>
+                                                        <div className={`mode-option ${calcMethod === 'voronoi' ? 'active' : ''}`}
+                                                            onClick={() => setCalcMethod('voronoi')}>
+                                                            Voronoi {voronoiLayers}-Layer
+                                                        </div>
+                                                    </div>
                                                 </div>
+
+                                                {calcMethod === 'voronoi' && (
+                                                    <div className="form-group">
+                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span>Voronoi Layers</span>
+                                                            <input type="number" min="1" max="10" value={voronoiLayers}
+                                                                onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 1 && v <= 10) setVoronoiLayers(v); }}
+                                                                style={{ width: '52px', padding: '3px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: '4px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 600, background: '#f1f5f9' }} />
+                                                        </label>
+                                                        <input type="range" className="thin-slider" min="1" max="10" step="1" value={voronoiLayers}
+                                                            onChange={e => setVoronoiLayers(parseInt(e.target.value))}
+                                                            style={{ marginTop: '8px' }} />
+                                                        <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>Layer 1 = direct neighbors, Layer 2 = neighbors of neighbors, etc.</div>
+                                                    </div>
+                                                )}
+
+                                                {calcMethod === 'brute' && (
+                                                    <>
+                                                        <div className="form-group">
+                                                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                <span>Nearest N Sites</span>
+                                                                <input type="number" min="1" max="500" value={nNeighbors}
+                                                                    onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 1 && v <= 500) setNNeighbors(v); }}
+                                                                    style={{ width: '52px', padding: '3px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: '4px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 600, background: '#f1f5f9' }} />
+                                                            </label>
+                                                            <input type="range" className="thin-slider" min="1" max="50" step="1" value={nNeighbors}
+                                                                onChange={e => setNNeighbors(parseInt(e.target.value))}
+                                                                style={{ marginTop: '8px' }} />
+                                                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>Assign the N nearest neighbor sites to each source</div>
+                                                        </div>
+                                                    </>
+                                                )}
 
                                                 <div className="form-group">
                                                     <label>Distance Unit</label>
@@ -2761,6 +3453,10 @@
                                     distanceUnit={distanceUnit}
                                     popupColumns={popupColumns}
                                     popupColumnsTarget={popupColumnsTarget}
+                                    showVoronoi={showVoronoi}
+                                    voronoiEdges={voronoiEdges}
+                                    calcMethod={calcMethod}
+                                    voronoiLayers={voronoiLayers}
                                 />
                             </div>
 

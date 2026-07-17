@@ -18,7 +18,7 @@ A powerful web-based tool for calculating distances between geographic locations
 
 ## Features
 
-### 1. Dual Calculation Modes
+### 1. Dual Dataset Modes
 
 #### All Sites (Single File Mode)
 - Upload one file containing all your sites
@@ -30,7 +30,19 @@ A powerful web-based tool for calculating distances between geographic locations
 - Each source site finds its N nearest targets
 - Ideal for: customer to store mapping, delivery route optimization
 
-### 2. Flexible Data Import
+### 2. Nearest Neighbor Algorithms
+
+#### Brute Force 1-NN
+- Calculates raw Haversine distances to every point and selects the absolute closest N sites.
+- Ideal for exact distance-based proximity when ignoring topology.
+
+#### Voronoi 1-Layer (Delaunay Triangulation)
+- Calculates logical proximity based on geometric adjacency (Voronoi Diagrams / Delaunay Triangulation).
+- Layer 1 finds directly adjacent neighbors (sharing a Voronoi boundary).
+- Layer 2 expands to neighbors of neighbors.
+- Ideal for natural territory mapping and spatial coverage analysis.
+
+### 3. Flexible Data Import
 
 | Format | Extension | Description |
 |--------|----------|------------|
@@ -43,7 +55,7 @@ A powerful web-based tool for calculating distances between geographic locations
 - Drag and drop support
 - Large file support with progress indication
 
-### 3. Advanced Filtering
+### 4. Advanced Filtering
 
 - **Search by Site ID**: Quick search to locate specific sites
 - **Column Filters**: Filter sites by any data column value
@@ -51,7 +63,7 @@ A powerful web-based tool for calculating distances between geographic locations
 - **Max Distance**: Set maximum neighbor distance threshold
 - **Operator Options**: <, <=, =, >, >=
 
-### 4. Interactive Map Visualization
+### 5. Interactive Map Visualization
 
 #### Map Layers
 | Style | Description |
@@ -73,23 +85,25 @@ A powerful web-based tool for calculating distances between geographic locations
 #### Map Features
 - Marker clustering for large datasets
 - Hover highlighting
+- **Combined Voronoi Polygons**: Visualize underlying territory areas when using the Voronoi algorithm.
 - Click-to-zoom on table selection
 - Fly-to animation
 - Custom zoom controls
 - Layer switcher
 
-### 5. Data Table View
+### 6. Data Table View
 
 Virtualized table rendering for handling datasets with 100,000+ rows:
 
 - Source Site column
-- Rank column (#1, #2, #3, etc.)
+- Rank column (#1, #2, #3, etc. - in Voronoi mode, resets per layer)
 - Neighbor Site column
 - Distance column (with unit)
+- Voronoi Layer (only available in Voronoi algorithm mode)
 - Click row to zoom to site on map
 - Smooth scrolling
 
-### 6. Custom Popup Information
+### 7. Custom Popup Information
 
 Configurable popup display showing:
 - Site ID / Name
@@ -98,7 +112,7 @@ Configurable popup display showing:
 - Nearest N neighbors with distances
 - Parent source sites (for targets)
 
-### 7. Export Options
+### 8. Export Options
 
 #### GeoJSON
 Standard GeoJSON format with:
@@ -110,13 +124,12 @@ Standard GeoJSON format with:
 - Styled placemarks
 - Connection lines
 - Info bubbles with neighbor data
+- **Voronoi Cell Polygons**: Bounded territory regions for neighborhood analysis.
 - Compatible with Google Earth Pro
 
 #### Excel (XLSX)
-Three sheets included:
-1. **Detailed_Distances**: Source → Neighbor with rank
-2. **Sites**: All sites with coordinates and types
-3. **Unique_Connections**: Deduplicated connections
+Contains one clean sheet:
+1. **Detailed_Distances**: Directed list (Source → Neighbor) with distance and rank. In Voronoi mode, this also includes the `Voronoi Layer` each neighbor belongs to, with `Rank` values ordered cleanly within each layer.
 
 ---
 
@@ -132,7 +145,7 @@ No installation required - runs entirely in browser
 1. Open the HTML file in your browser
 2. Drag and drop your CSV/Excel file
 3. Verify column mappings are correct
-4. Set number of neighbors (default: 3)
+4. Set calculation mode (Brute Force or Voronoi) and neighbor limits
 5. Click "Calculate & Draw"
 6. Explore results on map
 
@@ -142,7 +155,7 @@ No installation required - runs entirely in browser
 
 ### Step 1: Choose Calculation Mode
 
-| Mode | Use When |
+| Dataset Mode | Use When |
 |------|---------|
 | All Sites (1 File) | Finding neighbors within one dataset |
 | Source & Target | Finding targets from a separate dataset |
@@ -197,6 +210,7 @@ Customize markers and lines:
 3. Choose icon, color, size, opacity
 4. Adjust line settings
 5. Toggle site labels
+6. Toggle Voronoi global diagram visibility
 
 **Location**: Sidebar > Style tab
 
@@ -206,7 +220,8 @@ Set neighbor finding parameters:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| N Neighbors | Number of closest sites to find | 3 |
+| Algorithm | Brute Force or Voronoi | Brute Force |
+| N Neighbors / Layers | Number of nearest sites or Voronoi layer depth | 3 / 1 |
 | Distance Unit | km, m, mi, ft | km |
 | Exclude Zero | Remove identical coordinates | Checked |
 | Max Distance | Optional distance limit | None |
@@ -266,45 +281,21 @@ Where:
 - R = Earth's radius (6,371 km)
 - d = distance
 
-#### Implementation
+### Voronoi Diagram & Delaunay Triangulation
 
-```javascript
-function haversine(lat1, lon1, lat2, lon2) {
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-```
+In Voronoi mode, the application builds a **Delaunay Triangulation** using the `delaunator` library to find naturally adjacent geographic neighbors.
+- Points that share a triangle edge in the Delaunay graph are considered "Layer 1" neighbors.
+- The Voronoi cells are derived from the circumcenters of the Delaunay triangles, mathematically representing the territory closest to each site.
 
-#### Distance Units
-
-| Unit | Conversion Factor |
-|------|------------------|
-| Kilometers (km) | 1 |
-| Meters (m) | 1000 |
-| Miles (mi) | 0.621371 |
-| Feet (ft) | 3280.84 |
-
-### Algorithm
+#### Algorithm
 
 1. Parse source and target coordinates
-2. For each source site, calculate distance to all targets
-3. Filter by max distance (if set)
-4. Sort by distance ascending
-5. Take top N neighbors
-6. Build connection list
-
-#### Time Complexity
-
-O(S × T × log(T)) where:
-- S = number of source sites
-- T = number of target sites
-- Sorting is performed per source
+2. Generate Delaunay Triangulation (if using Voronoi Mode)
+3. For each source site, calculate Haversine distance to targets (either all targets in Brute Force, or topologically adjacent targets in Voronoi mode).
+4. Filter by max distance (if set)
+5. Sort by distance ascending (and by layer in Voronoi mode)
+6. Take top N neighbors or N layers
+7. Build connection list
 
 #### Async Chunking
 
@@ -348,14 +339,6 @@ LAX002,Los Angeles Store,34.0522,-118.2437,West,Retail
 CHI003,Chicago Store,41.8781,-87.6298,Midwest,Warehouse
 ```
 
-### Sample Data (Excel)
-
-| site_id | site_name | lat | lng | region | type |
-|--------|----------|-----|-----|--------|------|
-| NYC001 | New York Store | 40.7128 | -74.0060 | NE | Retail |
-| LAX002 | Los Angeles Store | 34.0522 | -118.2437 | West | Retail |
-| CHI003 | Chicago Store | 41.8781 | -87.6298 | Midwest | Warehouse |
-
 ---
 
 ## Export Formats
@@ -371,78 +354,31 @@ CHI003,Chicago Store,41.8781,-87.6298,Midwest,Warehouse
       "geometry": {
         "type": "Point",
         "coordinates": [-74.0060, 40.7128]
-      },
-      "properties": {
-        "id": "NYC001",
-        "region": "NE",
-        "type": "Retail"
-      }
-    },
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [
-          [-74.0060, 40.7128],
-          [-118.2437, 34.0522]
-        ]
-      },
-      "properties": {
-        "from": "NYC001",
-        "to": "LAX002",
-        "distance": 3935.789
       }
     }
   ]
 }
 ```
 
-### KML Structure
+### KML Structure (Google Earth)
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>Site To Site Distance Calculator Export</name>
-  <Style id="sourceStyle">
-    <IconStyle>
-      <scale>1.0</scale>
-      <Icon>
-        <href>http://www.google.com/mapfiles/kml/paddle/grn-blank.png</href>
-      </Icon>
-    </IconStyle>
-  </Style>
-  <Placemark>
-    <name>NYC001</name>
-    <description><![CDATA[<div>Distance: 3.942 km</div>]]></description>
-    <styleUrl>#sourceStyle</styleUrl>
-    <Point>
-      <coordinates>-74.0060,40.7128,0</coordinates>
-    </Point>
-  </Placemark>
+  <!-- Styled placemarks, connection lines, and layered Voronoi polygons -->
 </Document>
 </kml>
 ```
 
-### Excel Structure
+### Excel Structure (Detailed_Distances)
 
-#### Sheet 1: Detailed_Distances
-| Source Site | Rank | Neighbor Site | Distance (km) |
-|------------|------|---------------|---------------|
-| NYC001 | 1 | CHI003 | 1143.205 |
-| NYC001 | 2 | LAX002 | 3935.789 |
-| LAX002 | 1 | CHI002 | 2803.442 |
-
-#### Sheet 2: Sites
-| ID | Lat | Lng | Type | Neighbors |
-|----|-----|-----|------|-----------|
-| NYC001 | 40.7128 | -74.0060 | Source & Target | 1. CHI003 (1143.20 km) \| 2. LAX002 (3935.79 km) |
-
-#### Sheet 3: Unique_Connections
-| From | To | Distance (km) |
-|------|----|---------------|
-| NYC001 | CHI003 | 1143.205 |
-| NYC001 | LAX002 | 3935.789 |
+| Source Site | Neighbor Site | Distance (km) | Voronoi Layer | Rank |
+|------------|---------------|---------------|---------------|------|
+| NYC001 | CHI003 | 1143.205 | 1 | 1 |
+| NYC001 | LAX002 | 3935.789 | 2 | 1 |
+*(Note: Voronoi Layer is only present when using Voronoi Algorithm)*
 
 ---
 
@@ -485,34 +421,13 @@ CHI003,Chicago Store,41.8781,-87.6298,Midwest,Warehouse
 
 **Possible Causes:**
 1. Browser memory limits
-2. Too many markers
+2. Too many markers or Voronoi polygons
 
 **Solutions:**
 - Use max distance filter to reduce results
 - Increase max zoom level for clustering
+- Toggle off "Show Voronoi" map visual overlay
 - Export to Excel for full data
-
-### Export Not Working
-
-**Possible Causes:**
-1. No data calculated
-2. Browser security settings
-
-**Solutions:**
-- Click Calculate & Draw first
-- Try different browser
-- Check browser console for errors
-
-### Map Not Loading
-
-**Possible Causes:**
-1. No internet connection (for map tiles)
-2. Browser compatibility
-
-**Solutions:**
-- Check internet connection
-- Try Chrome or Firefox
-- Check firewall/proxy settings
 
 ---
 
@@ -523,6 +438,7 @@ CHI003,Chicago Store,41.8781,-87.6298,Midwest,Warehouse
 - **React 18**: UI Framework
 - **Leaflet**: Interactive maps
 - **Leaflet MarkerCluster**: Marker clustering
+- **Delaunator**: Voronoi/Delaunay Triangulation
 - **PapaParse**: CSV parsing
 - **SheetJS (XLSX)**: Excel file handling
 - **Lucide Icons**: Icon library
@@ -536,28 +452,14 @@ CHI003,Chicago Store,41.8781,-87.6298,Midwest,Warehouse
 | Safari | 13.1+ |
 | Edge | 80+ |
 
-### Performance Guidelines
-
-| Dataset Size | Recommendation |
-|--------------|--------------|
-| < 1,000 sites | No issues |
-| 1,000 - 10,000 | Use clustering |
-| 10,000 - 50,000 | Use async processing |
-| 50,000+ | Use max distance filter |
-
 ### Coordinate Reference System
 
 **WGS84** (EPSG:4326)
 - Standard GPS coordinate system
 - Used by all mapping applications
-- Earth-centered, Earth-fixed
 
 ---
 
 ## License
 
 This tool is provided as-is for educational and commercial use.
-
-## Version
-
-Current Version: 1.0.0
