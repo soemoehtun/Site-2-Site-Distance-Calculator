@@ -1924,18 +1924,43 @@ const MapLayerSwitcher = ({ mapStyle, onStyleChange }) => {
                     const siteWithNeighbors = sitesWithNeighbors?.find(sw => sw.id === s.id);
                     
                     if (s.isSource || singleIconMode) {
-                        const neighborList = siteWithNeighbors?.neighbors?.map((n, idx) => {
-                            const layerNum = n.layer || 1;
-                            const layerColor = calcMethod === 'voronoi' ? LAYER_COLORS[(layerNum - 1) % LAYER_COLORS.length] : '#94a3b8';
-                            const layerBadge = calcMethod === 'voronoi'
-                                ? `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${layerColor}; margin-right: 4px; vertical-align: middle;"></span><span style="font-size: 10px; color: ${layerColor}; font-weight: 600;">L${layerNum}</span>`
-                                : '';
-                            return `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
-                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
-                            </div>`;
-                        }).join('') || `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
+                        let neighborList = '';
+                        const neighbors = siteWithNeighbors?.neighbors || [];
                         
-                        const assignedCount = siteWithNeighbors?.neighbors?.length || 0;
+                        if (calcMethod === 'voronoi' && neighbors.length > 0) {
+                            const layerGroups = {};
+                            neighbors.forEach((n) => {
+                                const layerNum = n.layer || 1;
+                                if (!layerGroups[layerNum]) layerGroups[layerNum] = [];
+                                layerGroups[layerNum].push(n);
+                            });
+                            
+                            neighborList = Object.keys(layerGroups)
+                                .sort((a, b) => Number(a) - Number(b))
+                                .map(layerNum => {
+                                    const ln = Number(layerNum);
+                                    const layerColor = LAYER_COLORS[(ln - 1) % LAYER_COLORS.length];
+                                    const items = layerGroups[layerNum].map(n =>
+                                        `<div style="margin-bottom: 2px; font-size: 12px; color: #1e293b; padding-left: 4px;">
+                                            <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: ${layerColor}; margin-right: 4px; vertical-align: middle;"></span><strong>${n.to}</strong> &ndash; ${(n.dist || 0).toFixed(3)} ${distanceUnit}
+                                        </div>`
+                                    ).join('');
+                                    return `<div style="margin-top: 6px; margin-bottom: 2px; padding: 3px 0; border-bottom: 1px solid #f1f5f9;">
+                                        <div style="font-size: 10px; font-weight: 700; color: ${layerColor}; text-transform: uppercase; letter-spacing: 0.04em;">Layer ${layerNum}</div>
+                                        ${items}
+                                    </div>`;
+                                }).join('');
+                        } else if (neighbors.length > 0) {
+                            neighborList = neighbors.map((n, idx) =>
+                                `<div style="margin-bottom: 4px; font-size: 12px; color: #1e293b;">
+                                    <strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
+                                </div>`
+                            ).join('');
+                        } else {
+                            neighborList = `<div style="margin-bottom: 4px; font-size: 12px; color: #64748b;">None</div>`;
+                        }
+                        
+                        const assignedCount = neighbors.length || 0;
                         const headerLabel = calcMethod === 'voronoi'
                             ? `Voronoi Neighbors (${voronoiLayers}-Layer)`
                             : `Nearest ${nNeighbors || 3} Neighbors (${assignedCount} assigned)`;
@@ -2097,6 +2122,11 @@ const MapLayerSwitcher = ({ mapStyle, onStyleChange }) => {
                 if (site) {
                     const currentZoom = mapInst.current.getZoom();
                     mapInst.current.flyTo([site.lat, site.lng], currentZoom > 12 ? currentZoom : 12, { duration: 0.5 });
+                    // Auto-open popup (search or click)
+                    const marker = markersMapRef.current.get(selectedSite);
+                    if (marker) {
+                        setTimeout(() => { marker.openPopup(); }, 400);
+                    }
                 }
             }, [selectedSite, sites]);
 
@@ -2676,41 +2706,11 @@ const calculateAndDraw = useCallback(() => {
             const { sitesWithNeighbors, allSites, connections } = useMemo(() => {
                 let { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns } = calculatedData;
 
-                // Filter by search term (site code only)
-                if (filterSearch) {
-                    const query = filterSearch.toLowerCase();
-                    // Find sites where ID matches (site code search)
-                    const idMatchingSites = rawAll.filter(s => s.id.toLowerCase().includes(query));
+                // NOTE: Search (filterSearch) no longer filters map data.
+                // Instead, search selects + zooms to the site and opens its popup,
+                // while the selection highlight effect (effect #5) handles
+                // showing connections, Voronoi polygons, and neighbor rings.
 
-                    const relevantIds = new Set();
-
-                    // Include site + its n neighbors
-                    idMatchingSites.forEach(s => {
-                        relevantIds.add(s.id);
-                        const siteWithNeighbors = rawSites.find(rs => rs.id === s.id);
-                        if (siteWithNeighbors?.neighbors) {
-                            siteWithNeighbors.neighbors.forEach(n => relevantIds.add(n.to));
-                        }
-                    });
-
-                    // Create isNeighbor map before filtering
-                    const isNeighborMap = new Map();
-                    rawAll.forEach(s => isNeighborMap.set(s.id, !!s.isNeighbor));
-
-                    // Filter sites and preserve isNeighbor flag
-                    rawSites = rawSites.filter(s => {
-                        if (!relevantIds.has(s.id)) return false;
-                        s.isNeighbor = isNeighborMap.get(s.id) || false;
-                        return true;
-                    });
-                    rawConns = rawConns.filter(c => relevantIds.has(c.from) && relevantIds.has(c.to));
-                    rawAll = rawAll.filter(s => {
-                        if (!relevantIds.has(s.id)) return false;
-                        s.isNeighbor = isNeighborMap.get(s.id) || false;
-                        return true;
-                    });
-                }
-                
                 // Filter by column and value
                 if (filterColumn && filterValue) {
                     rawSites = rawSites.filter(s => String(s.originalData?.[filterColumn] || '') === String(filterValue));
@@ -2739,7 +2739,7 @@ const calculateAndDraw = useCallback(() => {
                 }
 
                 return { sitesWithNeighbors: rawSites, allSites: rawAll, connections: rawConns };
-            }, [calculatedData, filterSearch, filterColumn, filterValue, matchFilter]);
+            }, [calculatedData, filterColumn, filterValue, matchFilter]);
 
             // Consolidated site type filter: compute sourceIds/neighborIds once
             const { filteredAllSites, filteredConnections, filteredSitesWithNeighbors } = useMemo(() => {
@@ -2766,6 +2766,32 @@ const calculateAndDraw = useCallback(() => {
                 }
                 return { filteredAllSites: allSites, filteredConnections: connections, filteredSitesWithNeighbors: sitesWithNeighbors };
             }, [allSites, connections, sitesWithNeighbors, siteTypeFilter]);
+
+            // Export data: when a site is selected (via search/click), narrow to
+            // that site + its neighbors so exports match exactly what the map shows.
+            const { exportAllSites, exportSitesWithNeighbors, exportConnections } = useMemo(() => {
+                if (selectedSite) {
+                    const selectedData = filteredSitesWithNeighbors.find(s => s.id === selectedSite);
+                    if (selectedData && selectedData.neighbors && selectedData.neighbors.length > 0) {
+                        const neighborIds = new Set(selectedData.neighbors.map(n => n.to));
+                        neighborIds.add(selectedSite);
+                        const exportConns = filteredConnections.filter(c =>
+                            (c.from === selectedSite || c.to === selectedSite) ||
+                            (neighborIds.has(c.from) && neighborIds.has(c.to))
+                        );
+                        return {
+                            exportAllSites: filteredAllSites.filter(s => neighborIds.has(s.id)),
+                            exportSitesWithNeighbors: [selectedData],
+                            exportConnections: exportConns
+                        };
+                    }
+                }
+                return {
+                    exportAllSites: filteredAllSites,
+                    exportSitesWithNeighbors: filteredSitesWithNeighbors,
+                    exportConnections: filteredConnections
+                };
+            }, [filteredAllSites, filteredSitesWithNeighbors, filteredConnections, selectedSite]);
 
             // Zoom to site when searching by site code
             const prevFilterSearchRef = useRef('');
@@ -2806,15 +2832,15 @@ const calculateAndDraw = useCallback(() => {
 
             // Exports
             const getGeoJSON = useCallback(() => {
-                const features = filteredAllSites.map(s => ({
+                const features = exportAllSites.map(s => ({
                     type: 'Feature',
                     geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
                     properties: { id: s.id, ...(s.originalData || {}) }
                 }));
-                const lineFeatures = filteredConnections
+                const lineFeatures = exportConnections
                     .map(c => {
-                        const p1 = filteredAllSites.find(s => s.id === c.from);
-                        const p2 = filteredAllSites.find(s => s.id === c.to);
+                        const p1 = exportAllSites.find(s => s.id === c.from);
+                        const p2 = exportAllSites.find(s => s.id === c.to);
                         if (!p1 || !p2) return null;
                         return {
                             type: 'Feature',
@@ -2824,7 +2850,7 @@ const calculateAndDraw = useCallback(() => {
                     })
                     .filter(Boolean);
                 return { type: 'FeatureCollection', features: [...features, ...lineFeatures] };
-            }, [filteredAllSites, filteredConnections]);
+            }, [exportAllSites, exportConnections]);
 
             const downloadBlob = (blob, filename) => {
                 const url = URL.createObjectURL(blob);
@@ -2841,7 +2867,7 @@ const calculateAndDraw = useCallback(() => {
             };
 
             const exportKMZ = async () => {
-                const exportConns = connections;
+                const exportConns = exportConnections;
                 const zip = new JSZip();
                 const svgsToInclude = new Set();
                 const base64Images = new Set();
@@ -2940,9 +2966,9 @@ const calculateAndDraw = useCallback(() => {
 `;
 
                 const neighborDataMap = new Map();
-                sitesWithNeighbors.forEach(s => neighborDataMap.set(s.id, s));
+                exportSitesWithNeighbors.forEach(s => neighborDataMap.set(s.id, s));
 
-                allSites.forEach(s => {
+                exportAllSites.forEach(s => {
                     let extraInfoHtml = '';
                     if (s.originalData) {
                          const colsToUse = (hasTarget && s.isTarget && !s.isSource) ? popupColumnsTarget : popupColumns;
@@ -2960,17 +2986,43 @@ const calculateAndDraw = useCallback(() => {
                     const siteData = neighborDataMap.get(s.id);
 
                     if (s.isSource || !hasTarget) {
-                        const neighborList = siteData?.neighbors?.map((n, idx) => {
-                            const layerNum = n.layer || 1;
-                            const layerColor = calcMethod === 'voronoi' ? LAYER_COLORS[(layerNum - 1) % LAYER_COLORS.length] : '#94a3b8';
-                            const layerBadge = calcMethod === 'voronoi'
-                                ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${layerColor};margin-right:4px;vertical-align:middle;"></span><span style="font-size:10px;color:${layerColor};font-weight:600;">L${layerNum}</span>`
-                                : '';
-                            return `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
-                                ${layerBadge}<strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
-                            </div>`;
-                        }).join('') || `<div style="margin-bottom:4px;font-size:12px;color:#64748b;">None</div>`;
-                        const assignedCount = siteData?.neighbors?.length || 0;
+                        let neighborList = '';
+                        const neighbors = siteData?.neighbors || [];
+
+                        if (calcMethod === 'voronoi' && neighbors.length > 0) {
+                            const layerGroups = {};
+                            neighbors.forEach((n) => {
+                                const layerNum = n.layer || 1;
+                                if (!layerGroups[layerNum]) layerGroups[layerNum] = [];
+                                layerGroups[layerNum].push(n);
+                            });
+                            
+                            neighborList = Object.keys(layerGroups)
+                                .sort((a, b) => Number(a) - Number(b))
+                                .map(layerNum => {
+                                    const ln = Number(layerNum);
+                                    const layerColor = LAYER_COLORS[(ln - 1) % LAYER_COLORS.length];
+                                    const items = layerGroups[layerNum].map(n =>
+                                        `<div style="margin-bottom:2px;font-size:12px;color:#1e293b;padding-left:4px;">
+                                            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${layerColor};margin-right:4px;vertical-align:middle;"></span><strong>${n.to}</strong> &ndash; ${(n.dist || 0).toFixed(3)} ${distanceUnit}
+                                        </div>`
+                                    ).join('');
+                                    return `<div style="margin-top:6px;margin-bottom:2px;padding:3px 0;border-bottom:1px solid #f1f5f9;">
+                                        <div style="font-size:10px;font-weight:700;color:${layerColor};text-transform:uppercase;letter-spacing:0.04em;">Layer ${layerNum}</div>
+                                        ${items}
+                                    </div>`;
+                                }).join('');
+                        } else if (neighbors.length > 0) {
+                            neighborList = neighbors.map((n, idx) =>
+                                `<div style="margin-bottom:4px;font-size:12px;color:#1e293b;">
+                                    <strong>${idx + 1}. ${n.to}:</strong> ${(n.dist || 0).toFixed(3)} ${distanceUnit}
+                                </div>`
+                            ).join('');
+                        } else {
+                            neighborList = `<div style="margin-bottom:4px;font-size:12px;color:#64748b;">None</div>`;
+                        }
+
+                        const assignedCount = neighbors.length || 0;
                         const headerLabel = calcMethod === 'voronoi'
                             ? `Voronoi Neighbors (${voronoiLayers}-Layer)`
                             : `Nearest ${nNeighbors || 3} Neighbors (${assignedCount} assigned)`;
@@ -2980,7 +3032,7 @@ const calculateAndDraw = useCallback(() => {
                         </div>`;
                     } else if (s.isTarget && !s.isSource) {
                         const parentSources = [];
-                        sitesWithNeighbors.forEach(sw => {
+                        exportSitesWithNeighbors.forEach(sw => {
                             sw.neighbors?.forEach(n => {
                                 if (n.to === s.id) {
                                     parentSources.push({ id: sw.id, dist: n.dist });
@@ -3033,8 +3085,8 @@ const calculateAndDraw = useCallback(() => {
 `;
 
                 exportConns.forEach(c => {
-                    const p1 = allSites.find(s => s.id === c.from);
-                    const p2 = allSites.find(s => s.id === c.to);
+                    const p1 = exportAllSites.find(s => s.id === c.from);
+                    const p2 = exportAllSites.find(s => s.id === c.to);
                     if (!p1 || !p2) return;
 
                     const arrow = !hasTarget ? ' ⇄ ' : ' → ';
@@ -3052,6 +3104,7 @@ const calculateAndDraw = useCallback(() => {
 `;
 
                 if (showVoronoi && voronoiEdges.length > 0) {
+                    const filteredSiteIds = new Set(exportAllSites.map(s => s.id));
                     const kmlVoronoiEdgeColor = hexToKml('#8b5cf6', 0.8);
                     kml += `  <Style id="voronoiEdgeStyle">
     <LineStyle><color>${kmlVoronoiEdgeColor}</color><width>2</width></LineStyle>
@@ -3061,6 +3114,7 @@ const calculateAndDraw = useCallback(() => {
     <open>1</open>
 `;
                     voronoiEdges.forEach(edge => {
+                        if (edge.siteA && !filteredSiteIds.has(edge.siteA) && edge.siteB && !filteredSiteIds.has(edge.siteB)) return;
                         kml += `    <Placemark>
       <name>${edge.siteA || ''} - ${edge.siteB || ''}</name>
       <styleUrl>#voronoiEdgeStyle</styleUrl>
@@ -3117,7 +3171,7 @@ const exportExcel = () => {
 
                 // Detailed Distances (Directed: Source -> Neighbor with Rank)
                 const detailedRows = [];
-                calculatedData.sitesWithNeighbors.forEach(s => {
+                exportSitesWithNeighbors.forEach(s => {
                     let currentLayer = -1;
                     let layerRank = 0;
                     // Create a sorted copy of neighbors for Excel export
