@@ -1558,7 +1558,7 @@
         const ModernIconPickerInner = ({ isOpen, onClose, currentIcon, onSelect }) => {
             const [selectedIcon, setSelectedIcon] = useState(currentIcon?.url || '');
             const [selectedColor, setSelectedColor] = useState(currentIcon?.color || '#ffffff');
-            const [selectedScale, setSelectedScale] = useState(0.5);
+            const [selectedScale, setSelectedScale] = useState(1.0);
             const [selectedOpacity, setSelectedOpacity] = useState(currentIcon?.opacity !== undefined ? currentIcon.opacity : 1.0);
             
             const [customIcons, setCustomIcons] = useState(() => {
@@ -1569,7 +1569,7 @@
             useEffect(() => {
                 setSelectedIcon(currentIcon?.url || '');
                 setSelectedColor(currentIcon?.color || '#ffffff');
-                setSelectedScale(0.5);
+                setSelectedScale(1.0);
                 setSelectedOpacity(currentIcon?.opacity !== undefined ? currentIcon.opacity : 1.0);
             }, [currentIcon]);
 
@@ -1632,9 +1632,9 @@
                         <div className="icon-modal-top" style={{ padding: '16px 20px 12px', display: 'flex', gap: 16, background: '#ececec', alignItems: 'center', flexWrap: 'wrap' }}>
                             
                             {/* Large Left Preview Icon */}
-                            <div style={{ width: 72, height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', background: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}>
+                            <div style={{ width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', background: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}>
                                 {getIconUrl(selectedIcon, selectedColor) ? (
-                                    <svg width="72" height="72" viewBox="0 0 72 72" style={{ overflow: 'visible' }}>
+                                    <svg width="60" height="60" viewBox="0 0 60 60" style={{ overflow: 'visible' }}>
                                         {selectedColor !== '#ffffff' && !selectedIcon?.startsWith('svg/') && (
                                             <filter id="modal-icon-tint-preview">
                                                 <feComponentTransfer>
@@ -1646,7 +1646,7 @@
                                         )}
                                         <image 
                                             href={getIconUrl(selectedIcon, selectedColor)} 
-                                            x="0" y="0" width="72" height="72" 
+                                            x="10" y="10" width="40" height="40" 
                                             preserveAspectRatio="xMidYMid meet"
                                             filter={selectedColor !== '#ffffff' && !selectedIcon?.startsWith('svg/') ? 'url(#modal-icon-tint-preview)' : 'none'}
                                             style={{ 
