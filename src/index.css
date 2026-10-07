@@ -2285,5 +2285,156 @@ select.field-control { padding-right: 25px !important; }
   .map-search { flex: 1; width: auto; }
 }
 
+/* ==================== Segmented Analysis / Mode Tabs ==================== */
+.unit-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #78918b;
+  font-size: 9px;
+  font-weight: 700;
+  display: block;
+}
+
+.unit-label.calc-method-label,
+.calc-method-label {
+  color: #0d3437 !important;
+  margin-bottom: 6px;
+  font-weight: 850;
+}
+
+.analysis-box {
+  box-shadow: none;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  overflow: visible;
+}
+
+.analysis-header {
+  background: transparent;
+  border-bottom: none;
+  padding: 0 0 10px;
+}
+
+.analysis-tablist {
+  box-sizing: border-box;
+  background: #e2edea;
+  border-radius: 7px;
+  gap: 3px;
+  width: 100%;
+  padding: 3px;
+  display: flex;
+}
+
+.analysis-tab {
+  letter-spacing: 0.01em;
+  color: #4b635f !important;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 5px;
+  flex: 1 1 0;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+}
+
+.analysis-tab svg {
+  color: #5c7873;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.analysis-tab:hover:not(.active) {
+  color: #123835 !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+}
+
+.analysis-tab:hover:not(.active) svg {
+  color: #123835;
+}
+
+.analysis-tab.active {
+  color: #0b3835 !important;
+  background: #ffffff !important;
+  border: none !important;
+  font-weight: 750;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.analysis-tab.active svg {
+  color: #0f9382;
+}
+
+.analysis-panel {
+  background: transparent;
+  padding: 6px 0 0;
+}
+
+.analysis-panel > .check-row:first-child {
+  margin-top: 0;
+}
+
+.analysis-panel .field-help {
+  margin-bottom: 14px;
+}
+
+/* ================== Output Distance Unit Checkboxes ================== */
+.unit-check-grid {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 6px;
+  display: flex;
+}
+
+.unit-check {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #526b68;
+  cursor: pointer;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: color 0.12s;
+  display: inline-flex;
+}
+
+.unit-check:hover {
+  color: #123835;
+}
+
+.unit-check.active {
+  color: #0d3437;
+}
+
+.unit-check input {
+  accent-color: #0d3437;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.field-divider {
+  height: 1px;
+  background: #e6ecea;
+  border: none;
+  margin: 16px 0;
+}
+
+
+
+
 
 

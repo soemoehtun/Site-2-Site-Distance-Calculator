@@ -158,9 +158,10 @@ function bruteForceNeighbors(
         sLon *
         sLon;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const dist = 6371 * c * multiplier;
+    const distKm = 6371 * c;
+    const dist = distKm * multiplier;
     if (excludeZero && dist <= ZERO_EPS) continue;
-    if (!passesMaxDistance(dist, maxDistance, distanceOp)) continue;
+    if (!passesMaxDistance(distKm, maxDistance, distanceOp)) continue;
 
     if (filled === k) {
       // Equal distances keep the earlier candidate, matching the stable sort

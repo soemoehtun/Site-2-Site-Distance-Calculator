@@ -415,6 +415,8 @@ export default function App() {
 
   const [popupColumns, setPopupColumns] = useState<Set<string>>(new Set());
   const [popupColumnsTarget, setPopupColumnsTarget] = useState<Set<string>>(new Set());
+  const [mappingTab, setMappingTab] = useState<FileKind>("source");
+  const [popupTab, setPopupTab] = useState<FileKind>("source");
 
   // Styling & map
   const [markerSize, setMarkerSize] = useState(1.0);
@@ -1001,66 +1003,77 @@ export default function App() {
                 </section>
 
                 <section className="sidebar-section border-top">
-                  <div className="mapping-label">
-                    <label>Calculation Mode</label>
-                    <span>1 or 2 files</span>
-                  </div>
-                  <div className="mode-selector" style={{ marginBottom: 0 }}>
-                    <div
-                      className={`mode-option ${calcMode === "all" ? "active" : ""}`}
-                      onClick={() => setCalcMode("all")}
-                    >
-                      All Sites
+                  <span className="unit-label calc-method-label">Input Data</span>
+                  <div className="analysis-box">
+                    <div className="analysis-header">
+                      <div className="analysis-tablist" role="tablist" aria-label="Input data">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={calcMode === "all"}
+                          className={`analysis-tab ${calcMode === "all" ? "active" : ""}`}
+                          onClick={() => setCalcMode("all")}
+                        >
+                          <span>All Sites</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={calcMode === "pairwise"}
+                          className={`analysis-tab ${calcMode === "pairwise" ? "active" : ""}`}
+                          onClick={() => setCalcMode("pairwise")}
+                        >
+                          <span>Source &amp; Target</span>
+                        </button>
+                      </div>
                     </div>
-                    <div
-                      className={`mode-option ${calcMode === "pairwise" ? "active" : ""}`}
-                      onClick={() => setCalcMode("pairwise")}
-                    >
-                      Source &amp; Target
+
+                    <div className="analysis-panel">
+                      <p className="field-help">
+                        {calcMode === "all"
+                          ? "All Sites measures neighbours inside one file. Source & Target measures every source site against a second dataset."
+                          : "Source & Target measures every source site against a second dataset."}
+                      </p>
+
+                      <div className="form-group">
+                        <div className="mapping-label">
+                          <label>File Dataset</label>
+                          <span>{sourceData ? "loaded" : "required"}</span>
+                        </div>
+                        <FilePanel
+                          fileName={sourceFileName}
+                          data={sourceData}
+                          loading={loading === "source"}
+                          onFile={(f) => void handleFile(f, "source")}
+                          onSheet={(s) => void handleSheetChange(s, "source")}
+                          onRemove={removeSource}
+                        />
+
+                        {error && <div className="error-note">{error}</div>}
+                      </div>
+
+                      {calcMode === "pairwise" && (
+                        <div className="form-group" style={{ marginTop: 16 }}>
+                          <div className="mapping-label">
+                            <label>Target Dataset</label>
+                            <span>{targetData ? "loaded" : "optional"}</span>
+                          </div>
+                          <FilePanel
+                            fileName={targetFileName}
+                            data={targetData}
+                            loading={loading === "target"}
+                            onFile={(f) => void handleFile(f, "target")}
+                            onSheet={(s) => void handleSheetChange(s, "target")}
+                            onRemove={removeTarget}
+                          />
+                          <p className="field-help" style={{ marginTop: 8 }}>
+                            Leave empty to measure the source sites against themselves.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <p className="field-help">
-                    All Sites measures neighbours inside one file. Source &amp; Target measures every
-                    source site against a second dataset.
-                  </p>
                 </section>
-
-                <section className="sidebar-section border-top">
-                  <div className="mapping-label">
-                    <label>Source Dataset</label>
-                    <span>{sourceData ? "loaded" : "required"}</span>
-                  </div>
-                  <FilePanel
-                    fileName={sourceFileName}
-                    data={sourceData}
-                    loading={loading === "source"}
-                    onFile={(f) => void handleFile(f, "source")}
-                    onSheet={(s) => void handleSheetChange(s, "source")}
-                    onRemove={removeSource}
-                  />
-
-                  {error && <div className="error-note">{error}</div>}
-                </section>
-
-                {calcMode === "pairwise" && (
-                  <section className="sidebar-section border-top">
-                    <div className="mapping-label">
-                      <label>Target Dataset</label>
-                      <span>{targetData ? "loaded" : "optional"}</span>
-                    </div>
-                    <FilePanel
-                      fileName={targetFileName}
-                      data={targetData}
-                      loading={loading === "target"}
-                      onFile={(f) => void handleFile(f, "target")}
-                      onSheet={(s) => void handleSheetChange(s, "target")}
-                      onRemove={removeTarget}
-                    />
-                    <p className="field-help">
-                      Leave empty to measure the source sites against themselves.
-                    </p>
-                  </section>
-                )}
               </div>
             )}
 
@@ -1077,50 +1090,139 @@ export default function App() {
                 </section>
 
                 <section className="sidebar-section border-top">
-                  <MappingFields
-                    mapping={sourceMapping}
-                    columns={sourceColumns}
-                    onChange={setSourceMapping}
-                    validCount={validSourceCount}
-                    totalCount={sourceData?.rows.length ?? 0}
-                  />
-                </section>
-
-                {calcMode === "pairwise" && (
-                  <section className="sidebar-section border-top">
-                    <div className="mapping-label">
-                      <label>Target Columns</label>
-                      <span>{targetFileName || "not loaded"}</span>
+                  <span className="unit-label calc-method-label">Column Mapping</span>
+                  {calcMode === "pairwise" ? (
+                    <div className="analysis-box">
+                      <div className="analysis-header">
+                        <div className="analysis-tablist" role="tablist" aria-label="Column mapping dataset">
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={mappingTab === "source"}
+                            className={`analysis-tab ${mappingTab === "source" ? "active" : ""}`}
+                            onClick={() => setMappingTab("source")}
+                          >
+                            <span>File Columns</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={mappingTab === "target"}
+                            className={`analysis-tab ${mappingTab === "target" ? "active" : ""}`}
+                            onClick={() => setMappingTab("target")}
+                          >
+                            <span>Target Columns</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="analysis-panel">
+                        {mappingTab === "source" ? (
+                          <>
+                            <div className="mapping-label" style={{ marginBottom: 12 }}>
+                              <label>File Dataset</label>
+                              <span>{sourceFileName || "not loaded"}</span>
+                            </div>
+                            <MappingFields
+                              mapping={sourceMapping}
+                              columns={sourceColumns}
+                              onChange={setSourceMapping}
+                              validCount={validSourceCount}
+                              totalCount={sourceData?.rows.length ?? 0}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <div className="mapping-label" style={{ marginBottom: 12 }}>
+                              <label>Target Dataset</label>
+                              <span>{targetFileName || "not loaded"}</span>
+                            </div>
+                            <MappingFields
+                              mapping={targetMapping}
+                              columns={targetColumns}
+                              onChange={setTargetMapping}
+                              validCount={validTargetCount}
+                              totalCount={targetData?.rows.length ?? 0}
+                            />
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <MappingFields
-                      mapping={targetMapping}
-                      columns={targetColumns}
-                      onChange={setTargetMapping}
-                      validCount={validTargetCount}
-                      totalCount={targetData?.rows.length ?? 0}
-                    />
-                  </section>
-                )}
+                  ) : (
+                    <div className="analysis-box">
+                      <div className="analysis-panel">
+                        <div className="mapping-label" style={{ marginBottom: 12 }}>
+                          <label>File Dataset</label>
+                          <span>{sourceFileName || "not loaded"}</span>
+                        </div>
+                        <MappingFields
+                          mapping={sourceMapping}
+                          columns={sourceColumns}
+                          onChange={setSourceMapping}
+                          validCount={validSourceCount}
+                          totalCount={sourceData?.rows.length ?? 0}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </section>
 
                 <section className="sidebar-section border-top">
-                  <PopupFields
-                    label="Source popup fields"
-                    columns={sourceColumns}
-                    selected={popupColumns}
-                    onChange={setPopupColumns}
-                  />
+                  <span className="unit-label calc-method-label">Popup Fields</span>
+                  {calcMode === "pairwise" && targetColumns.length > 0 ? (
+                    <div className="analysis-box">
+                      <div className="analysis-header">
+                        <div className="analysis-tablist" role="tablist" aria-label="Popup fields dataset">
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={popupTab === "source"}
+                            className={`analysis-tab ${popupTab === "source" ? "active" : ""}`}
+                            onClick={() => setPopupTab("source")}
+                          >
+                            <span>File Popups</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={popupTab === "target"}
+                            className={`analysis-tab ${popupTab === "target" ? "active" : ""}`}
+                            onClick={() => setPopupTab("target")}
+                          >
+                            <span>Target Popups</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="analysis-panel">
+                        {popupTab === "source" ? (
+                          <PopupFields
+                            label="File popup fields"
+                            columns={sourceColumns}
+                            selected={popupColumns}
+                            onChange={setPopupColumns}
+                          />
+                        ) : (
+                          <PopupFields
+                            label="Target popup fields"
+                            columns={targetColumns}
+                            selected={popupColumnsTarget}
+                            onChange={setPopupColumnsTarget}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="analysis-box">
+                      <div className="analysis-panel">
+                        <PopupFields
+                          label="File popup fields"
+                          columns={sourceColumns}
+                          selected={popupColumns}
+                          onChange={setPopupColumns}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </section>
-
-                {calcMode === "pairwise" && targetColumns.length > 0 && (
-                  <section className="sidebar-section border-top">
-                    <PopupFields
-                      label="Target popup fields"
-                      columns={targetColumns}
-                      selected={popupColumnsTarget}
-                      onChange={setPopupColumnsTarget}
-                    />
-                  </section>
-                )}
               </div>
             )}
 
@@ -1228,41 +1330,53 @@ export default function App() {
                 </section>
 
                 <section className="sidebar-section border-top">
-                  <span className="field-label">Calculation method</span>
-                  <div className="mode-selector" style={{ marginBottom: 0 }}>
-                    <div
-                      className={`mode-option ${calcMethod === "brute" ? "active" : ""}`}
-                      onClick={() => {
-                        if (calcMethod !== "brute") {
-                          setCalcMethod("brute");
-                          setShowVoronoi(false);
-                          setCalculatedData(EMPTY_RESULTS);
-                          setShowOnMap(false);
-                          setSelectedSite(null);
-                        }
-                      }}
-                    >
-                      Brute force
+                  <span className="unit-label calc-method-label">Calculation method</span>
+                  <div className="analysis-box">
+                    <div className="analysis-header">
+                      <div className="analysis-tablist" role="tablist" aria-label="Calculation method">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={calcMethod === "brute"}
+                          className={`analysis-tab ${calcMethod === "brute" ? "active" : ""}`}
+                          onClick={() => {
+                            if (calcMethod !== "brute") {
+                              setCalcMethod("brute");
+                              setShowVoronoi(false);
+                              setCalculatedData(EMPTY_RESULTS);
+                              setShowOnMap(false);
+                              setSelectedSite(null);
+                            }
+                          }}
+                        >
+                          <span>Brute force</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={calcMethod === "voronoi"}
+                          className={`analysis-tab ${calcMethod === "voronoi" ? "active" : ""}`}
+                          onClick={() => {
+                            if (calcMethod !== "voronoi") {
+                              setCalcMethod("voronoi");
+                              setShowVoronoi(false);
+                              setCalculatedData(EMPTY_RESULTS);
+                              setShowOnMap(false);
+                              setSelectedSite(null);
+                            }
+                          }}
+                        >
+                          <span>Voronoi</span>
+                        </button>
+                      </div>
                     </div>
-                    <div
-                      className={`mode-option ${calcMethod === "voronoi" ? "active" : ""}`}
-                      onClick={() => {
-                        if (calcMethod !== "voronoi") {
-                          setCalcMethod("voronoi");
-                          setShowVoronoi(false);
-                          setCalculatedData(EMPTY_RESULTS);
-                          setShowOnMap(false);
-                          setSelectedSite(null);
-                        }
-                      }}
-                    >
-                      Voronoi
+                    <div className="analysis-panel">
+                      <p className="field-help">
+                        Brute force compares every pair. Voronoi walks Delaunay layers — much faster on
+                        large datasets.
+                      </p>
                     </div>
                   </div>
-                  <p className="field-help">
-                    Brute force compares every pair. Voronoi walks Delaunay layers — much faster on
-                    large datasets.
-                  </p>
 
                   {calcMethod === "brute" ? (
                     <div className="range-setting" style={{ marginTop: 18 }}>
@@ -1294,29 +1408,33 @@ export default function App() {
                     </div>
                   )}
 
+                  <div className="mapping-field" style={{ marginTop: 18 }}>
+                    <div className="mapping-label">
+                      <label>Output Distance Unit</label>
+                      <span>output precision</span>
+                    </div>
+                    <div className="unit-check-grid" role="group" aria-label="Output distance unit">
+                      {(["km", "m", "mi", "ft"] as DistanceUnit[]).map((u) => (
+                        <label key={u} className={`unit-check ${distanceUnit === u ? "active" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={distanceUnit === u}
+                            onChange={() => setDistanceUnit(u)}
+                          />
+                          {u}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
                   {calcMethod === "brute" && (
                     <>
-                      <div className="mapping-field" style={{ marginTop: 18 }}>
-                        <div className="mapping-label">
-                          <label>Distance unit</label>
-                          <span>output precision</span>
-                        </div>
-                        <select
-                          className="field-control"
-                          value={distanceUnit}
-                          onChange={(e) => setDistanceUnit(e.target.value as DistanceUnit)}
-                        >
-                          <option value="km">Kilometers (km)</option>
-                          <option value="m">Meters (m)</option>
-                          <option value="mi">Miles (mi)</option>
-                          <option value="ft">Feet (ft)</option>
-                        </select>
-                      </div>
+                      <div className="field-divider" />
 
                       <div className="mapping-field">
                         <div className="mapping-label">
                           <label>Max distance</label>
-                          <span>optional</span>
+                          <span>km always</span>
                         </div>
                         <div className="dual-input">
                           <select
@@ -1333,12 +1451,14 @@ export default function App() {
                           <input
                             className="field-control num-control"
                             type="number"
-                            placeholder="No limit"
+                            placeholder="No limit (km)"
                             value={maxDistance ?? ""}
                             onChange={(e) => setMaxDistance(e.target.value ? parseFloat(e.target.value) : null)}
                           />
                         </div>
                       </div>
+
+                      <div className="field-divider" />
 
                       <Toggle
                         label="Exclude zero distance"
