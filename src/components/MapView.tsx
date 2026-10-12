@@ -129,6 +129,14 @@ export default function MapView({
     return map;
   }, [sites]);
 
+  const sitesWithNeighborsById = useMemo(() => {
+    const map = new Map<string, SiteWithNeighbors>();
+    for (let i = 0; i < sitesWithNeighbors.length; i++) {
+      map.set(sitesWithNeighbors[i].id, sitesWithNeighbors[i]);
+    }
+    return map;
+  }, [sitesWithNeighbors]);
+
   useEffect(() => {
     if (!focusSite || focusSite.timestamp === lastFocusTimestampRef.current) return;
     lastFocusTimestampRef.current = focusSite.timestamp;
@@ -137,21 +145,42 @@ export default function MapView({
     const site = sitesById.get(focusSite.id);
     if (!site) return;
 
-    map.flyTo({
-      center: [site.lng, site.lat],
-      zoom: Math.max(map.getZoom(), 15),
-      essential: true,
-      duration: 800,
-    });
-  }, [focusSite, sitesById]);
-
-  const sitesWithNeighborsById = useMemo(() => {
-    const map = new Map<string, SiteWithNeighbors>();
-    for (let i = 0; i < sitesWithNeighbors.length; i++) {
-      map.set(sitesWithNeighbors[i].id, sitesWithNeighbors[i]);
+    const siteData = sitesWithNeighborsById.get(focusSite.id);
+    const neighborIds = (siteData?.neighbors || []).map((n) => n.to);
+    const pts: [number, number][] = [[site.lng, site.lat]];
+    for (let i = 0; i < neighborIds.length; i++) {
+      const ns = sitesById.get(neighborIds[i]);
+      if (ns) pts.push([ns.lng, ns.lat]);
     }
-    return map;
-  }, [sitesWithNeighbors]);
+
+    if (pts.length > 1) {
+      let minLon = Infinity,
+        minLat = Infinity,
+        maxLon = -Infinity,
+        maxLat = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const [x, y] = pts[i];
+        if (x < minLon) minLon = x;
+        if (y < minLat) minLat = y;
+        if (x > maxLon) maxLon = x;
+        if (y > maxLat) maxLat = y;
+      }
+      map.fitBounds(
+        [
+          [minLon, minLat],
+          [maxLon, maxLat],
+        ],
+        { padding: 80, maxZoom: 15, duration: 800 },
+      );
+    } else {
+      map.flyTo({
+        center: [site.lng, site.lat],
+        zoom: Math.max(map.getZoom(), 15),
+        essential: true,
+        duration: 800,
+      });
+    }
+  }, [focusSite, sitesById, sitesWithNeighborsById]);
 
   const selectedSiteObj = useMemo(
     () => (selectedSite ? sitesById.get(selectedSite) ?? null : null),
@@ -311,13 +340,28 @@ export default function MapView({
     try {
       map.setPaintProperty(LAYER_CONNECTIONS, "line-color", lineColor);
       if (!selectedSite) {
+        map.setFilter(LAYER_CONNECTIONS, null);
         map.setPaintProperty(LAYER_CONNECTIONS, "line-width", lineThickness);
         map.setPaintProperty(LAYER_CONNECTIONS, "line-opacity", lineOpacity / 100);
+      } else {
+        const siteData = sitesWithNeighborsById.get(selectedSite);
+        const neighborIds = (siteData?.neighbors || []).map((n) => n.to);
+        if (neighborIds.length > 0) {
+          map.setFilter(LAYER_CONNECTIONS, [
+            "all",
+            ["==", ["get", "from"], selectedSite],
+            ["in", ["get", "to"], ["literal", neighborIds]],
+          ]);
+        } else {
+          map.setFilter(LAYER_CONNECTIONS, ["==", ["get", "from"], ""]);
+        }
+        map.setPaintProperty(LAYER_CONNECTIONS, "line-width", Math.max(lineThickness * 1.6, 3));
+        map.setPaintProperty(LAYER_CONNECTIONS, "line-opacity", 1);
       }
     } catch {
       // layer fallback
     }
-  }, [lineColor, lineThickness, lineOpacity, selectedSite]);
+  }, [lineColor, lineThickness, lineOpacity, selectedSite, sitesWithNeighborsById]);
 
   const applyVoronoiData = useCallback(() => {
     const map = mapRef.current;
@@ -347,6 +391,7 @@ export default function MapView({
     try {
       if (!selectedSite) {
         prevSelectedSiteRef.current = null;
+        map.setFilter(LAYER_SITES, null);
         map.setFilter(LAYER_SITES_SELECTED, ["==", ["get", "id"], ""]);
         map.setFilter(LAYER_SITES_NEIGHBORS, ["==", ["get", "id"], ""]);
         map.setPaintProperty(LAYER_SITES, "circle-color", ["get", "color"]);
@@ -354,12 +399,18 @@ export default function MapView({
         map.setPaintProperty(LAYER_SITES, "circle-stroke-opacity", 1);
 
         if (calcMethod !== "voronoi" && map.getLayer(LAYER_CONNECTIONS)) {
+          map.setFilter(LAYER_CONNECTIONS, null);
           map.setPaintProperty(LAYER_CONNECTIONS, "line-opacity", lineOpacity / 100);
           map.setPaintProperty(LAYER_CONNECTIONS, "line-width", lineThickness);
         }
 
         if (map.getLayer(LAYER_LABELS)) {
           map.setFilter(LAYER_LABELS, null);
+          map.setLayoutProperty(
+            LAYER_LABELS,
+            "visibility",
+            showLabelsRef.current && sites.length > 0 ? "visible" : "none",
+          );
         }
         if (map.getLayer(LAYER_SITES_SELECTED_LABEL)) {
           map.setFilter(LAYER_SITES_SELECTED_LABEL, ["==", ["get", "id"], ""]);
@@ -386,26 +437,50 @@ export default function MapView({
         return;
       }
 
+      const selected = selectedSite ? sitesById.get(selectedSite) : null;
+      const siteData = selectedSite ? sitesWithNeighborsById.get(selectedSite) : null;
+      const neighborIds = (siteData?.neighbors || []).map((n) => n.to);
+      const visibleIds = [selectedSite, ...neighborIds];
+
+      // Keep all sites present, but fade out sites that are not the selected site or its neighbors
+      map.setFilter(LAYER_SITES, null);
+      map.setPaintProperty(LAYER_SITES, "circle-color", ["get", "color"]);
+      map.setPaintProperty(LAYER_SITES, "circle-opacity", [
+        "case",
+        ["in", ["get", "id"], ["literal", visibleIds]],
+        1,
+        0.2,
+      ]);
+      map.setPaintProperty(LAYER_SITES, "circle-stroke-opacity", [
+        "case",
+        ["in", ["get", "id"], ["literal", visibleIds]],
+        1,
+        0.2,
+      ]);
+
       // Display the selected source site's name prominently on the map
       if (map.getLayer(LAYER_SITES_SELECTED_LABEL)) {
         map.setFilter(
           LAYER_SITES_SELECTED_LABEL,
-          selectedSite ? ["==", ["get", "id"], selectedSite] : ["==", ["get", "id"], ""],
+          ["==", ["get", "id"], selectedSite],
         );
       }
-      if (map.getLayer(LAYER_LABELS)) {
-        map.setFilter(LAYER_LABELS, selectedSite ? ["!=", ["get", "id"], selectedSite] : null);
-      }
 
-      const selected = selectedSite ? sitesById.get(selectedSite) : null;
-      const siteData = selectedSite ? sitesWithNeighborsById.get(selectedSite) : null;
-      const neighborIds = (siteData?.neighbors || []).map((n) => n.to);
-      const relatedIds = [selectedSite, ...neighborIds];
+      // Display only the neighbor sites' labels
+      if (map.getLayer(LAYER_LABELS)) {
+        map.setLayoutProperty(LAYER_LABELS, "visibility", "visible");
+        map.setFilter(
+          LAYER_LABELS,
+          neighborIds.length > 0
+            ? ["in", ["get", "id"], ["literal", neighborIds]]
+            : ["==", ["get", "id"], ""],
+        );
+      }
 
       // 1. Highlight selected site
       map.setFilter(
         LAYER_SITES_SELECTED,
-        selectedSite ? ["==", ["get", "id"], selectedSite] : ["==", ["get", "id"], ""],
+        ["==", ["get", "id"], selectedSite],
       );
 
       // 2. Highlight neighbor sites
@@ -416,51 +491,57 @@ export default function MapView({
           : ["==", ["get", "id"], ""],
       );
 
-      // 3. Dim unrelated sites, keep related sites at full opacity; make center point blank inside for voronoi
-      map.setPaintProperty(LAYER_SITES, "circle-color", [
-        "case",
-        ["==", ["get", "id"], selectedSite],
-        calcMethod === "voronoi" ? "transparent" : ["get", "color"],
-        ["get", "color"],
-      ]);
-      map.setPaintProperty(LAYER_SITES, "circle-opacity", [
-        "case",
-        ["in", ["get", "id"], ["literal", relatedIds]],
-        1,
-        0.2,
-      ]);
-      map.setPaintProperty(LAYER_SITES, "circle-stroke-opacity", [
-        "case",
-        ["in", ["get", "id"], ["literal", relatedIds]],
-        1,
-        0.2,
-      ]);
-
-      // 4. Highlight connections for selected site (brute force mode)
+      // 3. Connections: show lines ONLY from selected site to its actual calculated neighbor sites
       if (calcMethod !== "voronoi" && map.getLayer(LAYER_CONNECTIONS)) {
-        map.setPaintProperty(LAYER_CONNECTIONS, "line-opacity", [
-          "case",
-          ["any", ["==", ["get", "from"], selectedSite], ["==", ["get", "to"], selectedSite]],
-          1,
-          0.05,
-        ]);
-        map.setPaintProperty(LAYER_CONNECTIONS, "line-width", [
-          "case",
-          ["any", ["==", ["get", "from"], selectedSite], ["==", ["get", "to"], selectedSite]],
-          Math.max(lineThickness * 1.6, 3),
-          Math.max(lineThickness * 0.6, 1),
-        ]);
+        if (neighborIds.length > 0) {
+          map.setFilter(LAYER_CONNECTIONS, [
+            "all",
+            ["==", ["get", "from"], selectedSite],
+            ["in", ["get", "to"], ["literal", neighborIds]],
+          ]);
+        } else {
+          map.setFilter(LAYER_CONNECTIONS, ["==", ["get", "from"], ""]);
+        }
+        map.setPaintProperty(LAYER_CONNECTIONS, "line-opacity", 1);
+        map.setPaintProperty(LAYER_CONNECTIONS, "line-width", Math.max(lineThickness * 1.6, 3));
       }
 
       if (selected) {
         if (selectedSite !== prevSelectedSiteRef.current) {
           prevSelectedSiteRef.current = selectedSite;
-          map.flyTo({
-            center: [selected.lng, selected.lat],
-            zoom: Math.max(map.getZoom(), 15),
-            essential: true,
-            duration: 750,
-          });
+          const pts: [number, number][] = [[selected.lng, selected.lat]];
+          for (let i = 0; i < neighborIds.length; i++) {
+            const ns = sitesById.get(neighborIds[i]);
+            if (ns) pts.push([ns.lng, ns.lat]);
+          }
+
+          if (pts.length > 1) {
+            let minLon = Infinity,
+              minLat = Infinity,
+              maxLon = -Infinity,
+              maxLat = -Infinity;
+            for (let i = 0; i < pts.length; i++) {
+              const [x, y] = pts[i];
+              if (x < minLon) minLon = x;
+              if (y < minLat) minLat = y;
+              if (x > maxLon) maxLon = x;
+              if (y > maxLat) maxLat = y;
+            }
+            map.fitBounds(
+              [
+                [minLon, minLat],
+                [maxLon, maxLat],
+              ],
+              { padding: 80, maxZoom: 15, duration: 750 },
+            );
+          } else {
+            map.flyTo({
+              center: [selected.lng, selected.lat],
+              zoom: Math.max(map.getZoom(), 15),
+              essential: true,
+              duration: 750,
+            });
+          }
         }
 
         if (popupRef.current) {
@@ -565,14 +646,27 @@ export default function MapView({
         showLabelsRef.current && sites.length > 0 ? "visible" : "none",
       );
       if (selectedSite) {
-        map.setFilter(LAYER_LABELS, ["!=", ["get", "id"], selectedSite]);
+        const siteData = sitesWithNeighborsById.get(selectedSite);
+        const neighborIds = (siteData?.neighbors || []).map((n) => n.to);
+        map.setLayoutProperty(LAYER_LABELS, "visibility", "visible");
+        map.setFilter(
+          LAYER_LABELS,
+          neighborIds.length > 0
+            ? ["in", ["get", "id"], ["literal", neighborIds]]
+            : ["==", ["get", "id"], ""],
+        );
       } else {
+        map.setLayoutProperty(
+          LAYER_LABELS,
+          "visibility",
+          showLabelsRef.current && sites.length > 0 ? "visible" : "none",
+        );
         map.setFilter(LAYER_LABELS, null);
       }
     } catch {
       // safe ignore
     }
-  }, [sites.length, selectedSite]);
+  }, [sites.length, selectedSite, sitesWithNeighborsById]);
 
   const applySitesDataRef = useRef(applySitesData);
   applySitesDataRef.current = applySitesData;
